@@ -1,0 +1,48 @@
+\set ON_ERROR_STOP on
+BEGIN;
+\ir guard-test.psql
+DO $guard$
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.users)
+     OR EXISTS (SELECT 1 FROM public.products)
+     OR EXISTS (SELECT 1 FROM public.stock_transactions) THEN
+    RAISE EXCEPTION 'Fixtures require empty tables; no deletion/reset/overwrite';
+  END IF;
+END
+$guard$;
+-- Synthetic accounts only. NULL hashes intentionally cannot authenticate.
+INSERT INTO public.users(username,display_name,role,is_active) VALUES
+  ('p3_admin','Synthetic admin','ADMIN',true),
+  ('p3_keeper','Synthetic keeper','KEEPER',true),
+  ('p3_staff','Synthetic staff','STAFF',true),
+  ('p3_viewer','Synthetic viewer','VIEWER',true),
+  ('p3_inactive','Synthetic inactive user','KEEPER',false),
+  ('p3_nohash','Synthetic no-password user','VIEWER',true);
+INSERT INTO public.products(product_id,product_name,base_unit,is_active) VALUES
+  ('P3_A','Synthetic product A','item',true),
+  ('P3_B','Synthetic product B','item',true),
+  ('P3_INACTIVE','Synthetic inactive product','item',false),
+  ('P3_MISSING','Synthetic missing inventory product','item',true),
+  ('P3_BIG','Synthetic bigint limit product','item',true);
+INSERT INTO public.product_units(product_id,unit_name,conversion_factor,scan_code,is_base_unit) VALUES
+  ('P3_A','item',1,'P3_A_ITEM',true),('P3_A','box',10,'P3_A_BOX',false),
+  ('P3_B','item',1,'P3_B_ITEM',true),('P3_B','box',10,'P3_B_BOX',false),
+  ('P3_INACTIVE','item',1,'P3_INACTIVE_ITEM',true),
+  ('P3_MISSING','item',1,'P3_MISSING_ITEM',true),
+  ('P3_BIG','item',1,'P3_BIG_ITEM',true);
+INSERT INTO public.scan_points(scan_point_id,point_name,is_active) VALUES
+  ('P3_GATE_A','Synthetic scanner A',true),
+  ('P3_GATE_B','Synthetic scanner B',true),
+  ('P3_GATE_OFF','Synthetic inactive scanner',false);
+UPDATE public.inventory SET quantity_base=100 WHERE product_id IN ('P3_A','P3_B','P3_INACTIVE');
+UPDATE public.inventory SET quantity_base=9223372036854775807 WHERE product_id='P3_BIG';
+-- Deliberate negative fixture ONLY in the isolated test database.
+DELETE FROM public.inventory WHERE product_id='P3_MISSING';
+-- Synthetic legacy row: no request_scan_code exists before migration.
+INSERT INTO public.stock_transactions(transaction_id,product_id,product_unit_id,scan_point_id,
+  user_id,movement_type,quantity_packages,conversion_factor_snapshot,inventory_after)
+SELECT 'e0000000-0000-4000-8000-000000000001'::uuid,'P3_A',pu.product_unit_id,
+  'P3_GATE_A',u.user_id,'IN',10,10,100
+FROM public.product_units pu CROSS JOIN public.users u
+WHERE pu.scan_code='P3_A_BOX' AND u.username='p3_keeper';
+COMMIT;

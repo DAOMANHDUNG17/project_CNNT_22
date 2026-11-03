@@ -1,0 +1,14 @@
+\set ON_ERROR_STOP on
+-- REVIEW ONLY. An existing authorized DBA session is required.
+-- psql -v audit_username=<approved test username>; never pass a password/hash here.
+-- This file is permitted to inspect the main DB, but only in READ ONLY mode.
+BEGIN READ ONLY;
+SELECT count(*)=1 AS account_exists,
+  coalesce(bool_or(is_active),false) AS account_active,
+  coalesce(bool_or(password_hash IS NULL),false) AS hash_null,
+  coalesce(bool_or(password_hash IS NOT NULL AND length(btrim(password_hash))=0),false) AS hash_blank,
+  coalesce(bool_or(password_hash LIKE '$argon2id$%'),false) AS argon2id_marker,
+  coalesce(bool_or(password_hash ~ '^\$2[aby]\$'),false) AS bcrypt_marker,
+  coalesce(bool_or(role IN ('ADMIN','KEEPER','STAFF','VIEWER')),false) AS allowed_role
+FROM public.users WHERE username=:'audit_username';
+ROLLBACK;

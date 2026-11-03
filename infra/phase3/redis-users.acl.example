@@ -1,0 +1,7 @@
+# NOT A USABLE ACL FILE: replace placeholders locally AFTER approval.
+# Password hashes and passwords must never be pasted into Git or logs.
+user default reset off
+user warehouse_health reset on #REPLACE_WITH_HEALTH_PASSWORD_SHA256 +ping
+# Draft commands for a future atomic session/rate-limit adapter, not yet tested.
+# No CONFIG/ACL/FLUSH*/KEYS/SCAN or allcommands/allkeys permission.
+user warehouse_session reset on #REPLACE_WITH_SESSION_PASSWORD_SHA256 ~ssw:p3:session:* ~ssw:p3:rate:* +ping +hello +get +set +del +pexpire +pttl +incr +eval +evalsha +script|load +client|setname +client|setinfo

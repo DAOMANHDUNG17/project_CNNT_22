@@ -1,0 +1,82 @@
+\set ON_ERROR_STOP on
+BEGIN;
+\ir guard-test.psql
+DO $guard$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+             WHERE n.nspname='public' AND c.relkind IN ('r','p','S','v','m')) THEN
+    RAISE EXCEPTION 'Schema must be empty: no overwrite or IF NOT EXISTS fallback';
+  END IF;
+END
+$guard$;
+
+CREATE TABLE public.users (
+  user_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  username varchar(50) NOT NULL UNIQUE,
+  display_name varchar(120) NOT NULL,
+  role varchar(20) NOT NULL CHECK (role IN ('ADMIN','KEEPER','STAFF','VIEWER')),
+  password_hash text,
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE public.products (
+  product_id varchar(20) PRIMARY KEY,
+  product_name varchar(150) NOT NULL,
+  base_unit varchar(30) NOT NULL,
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE public.product_units (
+  product_unit_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  product_id varchar(20) NOT NULL REFERENCES public.products(product_id),
+  unit_name varchar(30) NOT NULL,
+  conversion_factor integer NOT NULL CHECK (conversion_factor >= 1),
+  scan_code varchar(80) NOT NULL UNIQUE,
+  is_base_unit boolean NOT NULL DEFAULT false,
+  CONSTRAINT uq_product_unit UNIQUE(product_id,unit_name),
+  CONSTRAINT uq_product_unit_product UNIQUE(product_unit_id,product_id),
+  CONSTRAINT ck_base_unit_factor CHECK (NOT is_base_unit OR conversion_factor=1)
+);
+CREATE UNIQUE INDEX uq_one_base_unit_per_product ON public.product_units(product_id) WHERE is_base_unit;
+CREATE TABLE public.inventory (
+  product_id varchar(20) PRIMARY KEY REFERENCES public.products(product_id),
+  quantity_base bigint NOT NULL DEFAULT 0 CHECK (quantity_base >= 0),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE public.scan_points (
+  scan_point_id varchar(20) PRIMARY KEY,
+  point_name varchar(100) NOT NULL,
+  is_active boolean NOT NULL DEFAULT true
+);
+CREATE TABLE public.stock_transactions (
+  transaction_id uuid PRIMARY KEY,
+  product_id varchar(20) NOT NULL REFERENCES public.products(product_id),
+  product_unit_id bigint NOT NULL,
+  scan_point_id varchar(20) NOT NULL REFERENCES public.scan_points(scan_point_id),
+  user_id bigint NOT NULL REFERENCES public.users(user_id),
+  movement_type varchar(3) NOT NULL CHECK (movement_type IN ('IN','OUT')),
+  quantity_packages integer NOT NULL CHECK (quantity_packages > 0),
+  conversion_factor_snapshot integer NOT NULL CHECK (conversion_factor_snapshot > 0),
+  quantity_base bigint GENERATED ALWAYS AS
+    (quantity_packages::bigint * conversion_factor_snapshot::bigint) STORED,
+  inventory_after bigint NOT NULL CHECK (inventory_after >= 0),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT fk_tx_unit_belongs_to_product FOREIGN KEY(product_unit_id,product_id)
+    REFERENCES public.product_units(product_unit_id,product_id)
+);
+CREATE INDEX idx_stock_tx_product_time ON public.stock_transactions(product_id,created_at DESC);
+CREATE INDEX idx_stock_tx_scan_time ON public.stock_transactions(scan_point_id,created_at DESC);
+CREATE INDEX idx_stock_tx_user_time ON public.stock_transactions(user_id,created_at DESC);
+
+CREATE FUNCTION public.create_inventory_for_product() RETURNS trigger
+LANGUAGE plpgsql SECURITY INVOKER SET search_path=pg_catalog,public,pg_temp
+AS $function$
+BEGIN
+  INSERT INTO public.inventory(product_id) VALUES(NEW.product_id);
+  RETURN NEW;
+END
+$function$;
+CREATE TRIGGER trg_product_inventory AFTER INSERT ON public.products
+FOR EACH ROW EXECUTE FUNCTION public.create_inventory_for_product();
+REVOKE EXECUTE ON FUNCTION public.create_inventory_for_product() FROM PUBLIC;
+COMMIT;

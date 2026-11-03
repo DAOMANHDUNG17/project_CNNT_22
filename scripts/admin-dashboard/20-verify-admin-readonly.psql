@@ -1,0 +1,41 @@
+\set ON_ERROR_STOP on
+BEGIN READ ONLY;
+\ir ../phase3/guard-test.psql
+DO $verify$
+DECLARE v_fn oid:=to_regprocedure('public.admin_dashboard_write(bigint,text,jsonb)');
+BEGIN
+  IF v_fn IS NULL OR NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_roles r ON r.oid=p.proowner
+       WHERE p.oid=v_fn AND p.prosecdef AND r.rolname='warehouse_admin_executor'
+       AND NOT (r.rolcanlogin OR r.rolinherit OR r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls)
+       AND p.proconfig=ARRAY['search_path=pg_catalog, public, pg_temp']::text[])
+     OR NOT has_function_privilege('warehouse_backend',v_fn,'EXECUTE')
+     OR has_function_privilege('warehouse_readonly',v_fn,'EXECUTE')
+     OR EXISTS (SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) x
+       WHERE p.oid=v_fn AND x.grantee=0 AND x.privilege_type='EXECUTE')
+     OR has_column_privilege('warehouse_admin_executor','public.users','password_hash','SELECT')
+     OR has_any_column_privilege('warehouse_admin_executor','public.inventory','UPDATE')
+     OR has_any_column_privilege('warehouse_admin_executor','public.stock_transactions','INSERT,UPDATE,REFERENCES')
+     OR has_schema_privilege('warehouse_admin_executor','public','CREATE')
+     OR EXISTS(SELECT 1 FROM pg_auth_members m JOIN pg_roles r ON r.oid=m.member JOIN pg_roles p ON p.oid=m.roleid
+       WHERE r.rolname='warehouse_admin_executor' OR p.rolname='warehouse_admin_executor') THEN
+    RAISE EXCEPTION 'Admin function/owner/ACL verification failed';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+      WHERE n.nspname='public' AND c.relkind IN ('r','p')
+       AND (has_any_column_privilege('warehouse_backend',c.oid,'INSERT,UPDATE,REFERENCES')
+         OR has_any_column_privilege('warehouse_readonly',c.oid,'INSERT,UPDATE,REFERENCES')
+         OR has_table_privilege('warehouse_backend',c.oid,'DELETE,TRUNCATE,TRIGGER,MAINTAIN')
+         OR has_table_privilege('warehouse_readonly',c.oid,'DELETE,TRUNCATE,TRIGGER,MAINTAIN')
+         OR has_table_privilege('warehouse_admin_executor',c.oid,'DELETE,TRUNCATE,TRIGGER,MAINTAIN'))) THEN
+    RAISE EXCEPTION 'Unexpected effective runtime DML or admin destructive privilege';
+  END IF;
+  IF NOT has_column_privilege('warehouse_backend','public.users','auth_version','SELECT')
+     OR NOT has_column_privilege('warehouse_backend','public.users','created_at','SELECT')
+     OR has_column_privilege('warehouse_readonly','public.users','auth_version','SELECT')
+     OR has_column_privilege('warehouse_readonly','public.users','password_hash','SELECT') THEN
+    RAISE EXCEPTION 'Auth column isolation verification failed';
+  END IF;
+END;
+$verify$;
+SELECT 'ADMIN_METADATA_PASS' AS result;
+ROLLBACK;

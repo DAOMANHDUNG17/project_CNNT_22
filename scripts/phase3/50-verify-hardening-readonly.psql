@@ -1,0 +1,105 @@
+\set ON_ERROR_STOP on
+-- Catalog-only verification. No users rows, password/hash output or function call.
+BEGIN READ ONLY;
+\ir guard-test.psql
+SELECT current_database() AS database,current_user AS checking_role,
+       current_setting('server_version') AS version,current_setting('transaction_read_only') AS read_only;
+
+WITH f AS (
+  SELECT p.*,r.rolname AS owner,r.rolcanlogin,r.rolsuper,r.rolcreatedb,r.rolcreaterole,r.rolreplication,r.rolbypassrls
+  FROM pg_proc p JOIN pg_roles r ON r.oid=p.proowner
+  WHERE p.oid=to_regprocedure('public.record_stock_movement(uuid,bigint,character varying,character varying,character varying,integer)')
+)
+SELECT owner,prosecdef AS security_definer,proconfig,
+  has_function_privilege('warehouse_backend',oid,'EXECUTE') AS backend_execute,
+  has_function_privilege('warehouse_readonly',oid,'EXECUTE') AS reader_execute,
+  EXISTS (SELECT 1 FROM aclexplode(coalesce(proacl,acldefault('f',proowner))) x
+          WHERE x.grantee=0 AND x.privilege_type='EXECUTE') AS public_execute,
+  NOT (rolcanlogin OR rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls) AS owner_restricted
+FROM f;
+
+-- Every expected column privilege: effective rights include PUBLIC/membership.
+WITH roles(role_name) AS (VALUES ('warehouse_readonly'),('warehouse_backend'),('warehouse_stock_executor')),
+columns AS (
+  SELECT c.oid,c.relname,a.attnum,a.attname FROM pg_class c
+  JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_attribute a ON a.attrelid=c.oid
+  WHERE n.nspname='public' AND c.relkind IN ('r','p') AND a.attnum>0 AND NOT a.attisdropped
+), expected AS (
+  SELECT r.role_name,c.*,
+    CASE r.role_name
+      WHEN 'warehouse_readonly' THEN c.relname IN ('products','product_units','inventory','stock_transactions','scan_points')
+      WHEN 'warehouse_backend' THEN
+        (c.relname='users' AND c.attname IN ('user_id','username','display_name','role','password_hash','is_active')) OR
+        (c.relname='stock_transactions' AND c.attname IN ('transaction_id','product_id','product_unit_id','scan_point_id',
+          'movement_type','quantity_packages','conversion_factor_snapshot','quantity_base','inventory_after','created_at'))
+      ELSE
+        (c.relname='users' AND c.attname IN ('user_id','role','is_active')) OR
+        (c.relname='products' AND c.attname IN ('product_id','is_active')) OR
+        (c.relname='product_units' AND c.attname IN ('product_id','product_unit_id','scan_code','conversion_factor')) OR
+        (c.relname='scan_points' AND c.attname IN ('scan_point_id','is_active')) OR
+        (c.relname='inventory' AND c.attname IN ('product_id','quantity_base')) OR
+        (c.relname='stock_transactions' AND c.attname IN
+          ('transaction_id','user_id','scan_point_id','movement_type','quantity_packages','request_scan_code','inventory_after'))
+    END AS expect_select,
+    r.role_name='warehouse_stock_executor' AND c.relname='stock_transactions' AND c.attname IN
+      ('transaction_id','product_id','product_unit_id','scan_point_id','user_id','movement_type','quantity_packages',
+       'conversion_factor_snapshot','inventory_after','request_scan_code') AS expect_insert,
+    r.role_name='warehouse_stock_executor' AND
+      ((c.relname='inventory' AND c.attname IN ('quantity_base','updated_at')) OR
+       (c.relname='stock_transactions' AND c.attname='inventory_after')) AS expect_update
+  FROM roles r CROSS JOIN columns c
+), checks AS (
+  SELECT *,has_column_privilege(role_name,oid,attnum,'SELECT')=expect_select
+    AND has_column_privilege(role_name,oid,attnum,'INSERT')=expect_insert
+    AND has_column_privilege(role_name,oid,attnum,'UPDATE')=expect_update
+    AND NOT has_column_privilege(role_name,oid,attnum,'REFERENCES')
+    AND NOT has_column_privilege(role_name,oid,attnum,'SELECT WITH GRANT OPTION')
+    AND NOT has_column_privilege(role_name,oid,attnum,'INSERT WITH GRANT OPTION')
+    AND NOT has_column_privilege(role_name,oid,attnum,'UPDATE WITH GRANT OPTION') AS ok
+  FROM expected
+)
+SELECT role_name,relname,bool_and(ok) AS column_permissions_match,
+       array_agg(attname ORDER BY attnum) FILTER (WHERE NOT ok) AS mismatched_columns
+FROM checks GROUP BY role_name,relname ORDER BY role_name,relname;
+
+WITH roles AS (SELECT * FROM pg_roles WHERE rolname IN ('warehouse_readonly','warehouse_backend','warehouse_stock_executor'))
+SELECT rolname,rolcanlogin,NOT (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls OR rolinherit) AS restricted,
+  has_database_privilege(rolname,current_database(),'CONNECT') AS can_connect,
+  has_database_privilege(rolname,current_database(),'CREATE') AS can_create_database_objects,
+  has_database_privilege(rolname,current_database(),'TEMP') AS can_create_temp,
+  has_schema_privilege(rolname,'public','USAGE') AS schema_usage,
+  has_schema_privilege(rolname,'public','CREATE') AS schema_create
+FROM roles ORDER BY rolname;
+SELECT child.rolname AS member,parent.rolname AS member_of,m.admin_option,m.inherit_option,m.set_option
+FROM pg_auth_members m JOIN pg_roles child ON child.oid=m.member JOIN pg_roles parent ON parent.oid=m.roleid
+WHERE child.rolname IN ('warehouse_readonly','warehouse_backend','warehouse_stock_executor')
+   OR parent.rolname IN ('warehouse_readonly','warehouse_backend','warehouse_stock_executor');
+-- Expected no membership rows.
+
+WITH roles(role_name) AS (VALUES ('warehouse_readonly'),('warehouse_backend'),('warehouse_stock_executor'))
+SELECT r.role_name,c.relname,
+  has_table_privilege(r.role_name,c.oid,'DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN') AS forbidden_table_right,
+  pg_get_userbyid(c.relowner) AS table_owner
+FROM roles r CROSS JOIN pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+WHERE n.nspname='public' AND c.relkind IN ('r','p') ORDER BY r.role_name,c.relname;
+WITH roles(role_name) AS (VALUES ('warehouse_readonly'),('warehouse_backend'),('warehouse_stock_executor'))
+SELECT r.role_name,c.relname,has_sequence_privilege(r.role_name,c.oid,'USAGE,SELECT,UPDATE') AS forbidden_sequence_right
+FROM roles r CROSS JOIN pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+WHERE n.nspname='public' AND c.relkind='S' ORDER BY r.role_name,c.relname;
+SELECT p.oid::regprocedure::text AS signature,pg_get_userbyid(p.proowner) AS owner,p.prosecdef,p.proconfig,
+       has_function_privilege('warehouse_backend',p.oid,'EXECUTE') AS backend_execute,
+       has_function_privilege('warehouse_readonly',p.oid,'EXECUTE') AS reader_execute
+FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' ORDER BY p.proname;
+-- Expect only the reviewed stock function and inventory trigger helper.
+SELECT r.rolname,d.datname,s.setconfig
+FROM pg_db_role_setting s JOIN pg_roles r ON r.oid=s.setrole JOIN pg_database d ON d.oid=s.setdatabase
+WHERE d.datname=current_database() AND r.rolname IN ('warehouse_readonly','warehouse_backend');
+-- Expected reader read-only=on, backend read-only=off; no unreviewed settings.
+SELECT a.attname,format_type(a.atttypid,a.atttypmod) AS type,a.attnotnull,
+       pg_get_expr(d.adbin,d.adrelid) AS default_expr
+FROM pg_attribute a LEFT JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum
+WHERE a.attrelid=to_regclass('public.stock_transactions') AND a.attname='request_scan_code' AND NOT a.attisdropped;
+-- Expected varchar(80), nullable, no default; no automatic overall READY/PASS claim.
+\ir assert-hardening.psql
+SELECT 'HARDENING_METADATA_PASS' AS result;
+ROLLBACK;

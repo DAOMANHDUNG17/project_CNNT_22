@@ -1,0 +1,13 @@
+\set ON_ERROR_STOP on
+-- Shared fail-closed guard. No DDL, no table data access.
+DO $guard$
+BEGIN
+  IF current_database() <> 'smart_warehouse_phase3_test'
+     OR current_user <> 'postgres' OR session_user <> 'postgres'
+     OR current_setting('server_version_num')::integer / 10000 <> 17
+     OR current_setting('phase3.environment', true) IS DISTINCT FROM 'isolated-test-v1'
+     OR EXISTS (SELECT 1 FROM pg_database WHERE datname = 'smart_warehouse') THEN
+    RAISE EXCEPTION 'Wrong database/cluster/operator/version/marker: phase3 test only';
+  END IF;
+END
+$guard$;
