@@ -100,7 +100,7 @@ export class WarehouseApi {
     const headers = new Headers({ Accept: 'application/json' });
     if (options.body !== undefined) headers.set('Content-Type', 'application/json');
     if (options.csrf) {
-      if (!this.csrfToken) await this.csrf(options);
+      if (!this.csrfToken) await this.csrf({ signal: options.signal });
       headers.set('X-CSRF-Token', this.csrfToken!);
     }
     // Browser supplies Origin automatically on unsafe requests. Do not forge it.

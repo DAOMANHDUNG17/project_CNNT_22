@@ -13,6 +13,7 @@ export function secret(env, name) {
 
 export function readSecureConfig(env = process.env) {
   const base = readConfig({ ...env, PGPASSWORD: secret(env, 'PGPASSWORD') });
+  if (base.schema !== 'public') throw new Error('Secure runtime requires PGSCHEMA=public.');
   if (base.database.user !== 'warehouse_readonly' || env.WRITE_PGUSER !== 'warehouse_backend') {
     throw new Error('Secure runtime requires warehouse_readonly and warehouse_backend roles.');
   }

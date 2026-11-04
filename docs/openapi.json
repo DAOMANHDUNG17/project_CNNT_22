@@ -3763,6 +3763,11 @@
               },
               "message": {
                 "type": "string"
+              },
+              "transaction_id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "Present for TRANSACTION_OUTCOME_UNKNOWN; retry exactly this UUID and the original payload."
               }
             },
             "required": [

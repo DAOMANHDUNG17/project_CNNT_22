@@ -75,7 +75,7 @@ for (const [code, status, expected] of [
   });
 }
 
-test('unknown paths and write methods do not query the database', async (t) => {
+test('legacy read factory: unknown paths and write methods do not query the database', async (t) => {
   const base = await serve(t, { async query() { assert.fail('Unexpected database access'); } });
   for (const [path, method] of [['/api/missing', 'GET'], ['/api/products', 'POST'], ['/api/health', 'POST']]) {
     const response = await fetch(`${base}${path}`, { method });

@@ -7,6 +7,7 @@ import { createSessionRedis } from '../../src/db/redis.js';
 import { createAuth } from '../../src/auth/index.js';
 import { createApp } from '../../src/app.js';
 import { checkSecureAccess } from '../../src/db/secure-access.js';
+import { digest } from '../../src/auth/sessions.js';
 
 export const testSecret = name => readFileSync(new URL(`../../infra/phase3/local/${name}`, import.meta.url), 'utf8');
 export const origin = 'http://127.0.0.1:5173';
@@ -14,23 +15,41 @@ export async function startSecureServer(t, authOverrides = {}) {
   const env = parseEnv(readFileSync(new URL('../../infra/phase3/local/backend.env', import.meta.url), 'utf8'));
   const config = readSecureConfig(env);
   if (config.database.port !== 5433 || config.database.host !== '127.0.0.1'
-    || config.database.database !== 'smart_warehouse_phase3_test') throw new Error('Integration tests require the isolated test database.');
+    || config.database.database !== 'smart_warehouse_phase3_test'
+    || config.redis.host !== '127.0.0.1' || config.redis.port !== 6379
+    || config.redis.username !== 'warehouse_session') throw new Error('Integration tests require the isolated test services.');
   const admin = new pg.Pool({ ...config.writer, user: 'postgres', password: testSecret('postgres-admin-password.txt') });
-  const safe = (await admin.query("SELECT current_database()='smart_warehouse_phase3_test' AND current_setting('phase3.environment',true)='isolated-test-v1' AND NOT EXISTS(SELECT 1 FROM pg_database WHERE datname='smart_warehouse') AS safe")).rows[0].safe;
-  if (!safe) { await admin.end(); throw new Error('Refusing unsafe test cluster.'); }
   const db = new pg.Pool(config.database), writer = new pg.Pool(config.writer);
   const redis = createSessionRedis(config.redis, {error(){}});
-  await redis.connect();
-  await checkSecureAccess(db, writer);
-  const auth = createAuth({ db: writer, redis, schema: config.schema, config: { ...config.auth, ...authOverrides } });
-  const server = http.createServer(createApp({ db, writerDb: writer, auth, schema: config.schema, logger: {error(){}} }));
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const base = `http://127.0.0.1:${server.address().port}/api`;
+  let server;
   t.after(async () => {
-    await new Promise(resolve => server.close(resolve));
+    if (server?.listening) await new Promise(resolve => server.close(resolve));
     if (redis.isOpen) redis.destroy();
     await Promise.all([db.end(),writer.end(),admin.end()]);
   });
+  const safe = (await admin.query("SELECT current_database()='smart_warehouse_phase3_test' AND current_setting('phase3.environment',true)='isolated-test-v1' AND NOT EXISTS(SELECT 1 FROM pg_database WHERE datname='smart_warehouse') AS safe")).rows[0].safe;
+  if (!safe) throw new Error('Refusing unsafe test cluster.');
+  let deadline;
+  try {
+    await Promise.race([redis.connect(), new Promise((_, reject) => {
+      deadline = setTimeout(() => reject(new Error('Test Redis connection timed out.')), 6000);
+    })]);
+  } finally { clearTimeout(deadline); }
+  await checkSecureAccess(db, writer);
+  // Each fixture owns these synthetic login counters. Repeated test runs must
+  // not consume the prior run's 15-minute IP/account budget. Never FLUSHDB or
+  // delete sessions; the actual rate policy is still exercised within each test.
+  const ip = digest('127.0.0.1');
+  const rateKeys = [`ssw:p3:rate:login:ip:${ip}`];
+  for (const username of ['p3_admin','p3_keeper','p3_staff','p3_viewer','p3_inactive','p3_nohash']) {
+    const account = digest(username);
+    rateKeys.push(`ssw:p3:rate:login:pair:${account}:${ip}`, `ssw:p3:rate:login:user:${account}`);
+  }
+  await redis.sendCommand(['DEL', ...rateKeys]);
+  const auth = createAuth({ db: writer, redis, schema: config.schema, config: { ...config.auth, ...authOverrides } });
+  server = http.createServer(createApp({ db, writerDb: writer, auth, schema: config.schema, logger: {error(){}} }));
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}/api`;
   async function request(path, { method='GET', body, cookie, csrf, requestOrigin=origin, headers={} }={}) {
     const result = await fetch(base+path,{ method, headers: { Origin:requestOrigin,
       ...(cookie?{Cookie:cookie}:{}),...(csrf?{'X-CSRF-Token':csrf}:{}),
