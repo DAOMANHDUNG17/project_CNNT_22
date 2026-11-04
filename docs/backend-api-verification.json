@@ -1,5 +1,5 @@
 {
-  "verifiedAt": "2026-11-04T06:00:00.978Z",
+  "verifiedAt": "2026-11-04T18:36:06.960Z",
   "database": "smart_warehouse_phase3_test",
   "source": "real HTTP + TypeScript client + isolated PostgreSQL/Redis; schema assertions",
   "result": "PASS",

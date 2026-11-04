@@ -17,7 +17,7 @@ export default function TransactionsPage() {
   const list = useResource(useCallback(signal=>api.listTransactions({...paging,...(productId?{productId}:{}),movementType,scanPointId},{signal}),[paging,productId,movementType,scanPointId]));
   const detail = useResource(useCallback(signal=>selected?api.getTransaction(selected,{signal}):Promise.resolve(null),[selected]));
   const resetPage = ()=>setPaging(p=>({...p,page:1}));
-  return <div className="page-enter"><PageHeading eyebrow="LỊCH SỬ KHO" title="Giao dịch" description="Tra cứu các lần nhập xuất và số lượng đã được ghi nhận tại thời điểm giao dịch." action={<RefreshButton onClick={list.reload} loading={list.loading}/>}/>
+  return <div className="page-enter"><PageHeading title="Giao dịch" action={<RefreshButton onClick={list.reload} loading={list.loading}/>}/>
     <Card className="content-card"><div className="table-toolbar"><Input aria-label="Lọc mã sản phẩm" maxLength={20} prefix={<SearchOutlined/>} placeholder="Lọc theo mã sản phẩm chính xác…" allowClear value={product} onChange={e=>{setProduct(e.target.value);resetPage();}}/>
       <Space wrap><Select aria-label="Loại giao dịch" placeholder="Mọi loại giao dịch" allowClear value={movementType} style={{minWidth:170}} options={[{value:'IN',label:'Nhập kho'},{value:'OUT',label:'Xuất kho'}]} onChange={value=>{setMovementType(value);resetPage();}}/>
         <Select aria-label="Lọc điểm quét" placeholder="Mọi điểm quét" value={scanPointId} loading={points.loading} allowClear style={{minWidth:200}} options={points.data?.map(p=>({value:p.scan_point_id,label:`${p.scan_point_id} · ${p.point_name}`}))} onChange={value=>{setScanPointId(value);resetPage();}}/></Space></div>

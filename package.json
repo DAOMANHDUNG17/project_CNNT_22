@@ -9,7 +9,9 @@
   },
   "scripts": {
     "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
+    "dev": "node scripts/dev.js",
+    "dev:backend": "node --watch src/server.js",
+    "dev:frontend": "npm --prefix frontend run dev",
     "check:db": "node scripts/check-db.js",
     "check:phase2": "node scripts/check-phase2-access.js",
     "check:main": "node scripts/check-backend-main.js",
