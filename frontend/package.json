@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24.7" },
+  "engines": {
+    "node": ">=24.7"
+  },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "typecheck": "tsc --noEmit",
@@ -14,11 +16,13 @@
   },
   "dependencies": {
     "@ant-design/icons": "^6.0.0",
+    "@fontsource/be-vietnam-pro": "^5.3.0",
     "antd": "^6.0.0",
     "dayjs": "^1.11.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-router-dom": "^7.9.0"
+    "react-router-dom": "^7.9.0",
+    "swagger-ui-dist": "^5.34.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.0",

@@ -38,7 +38,7 @@ export default function ProductsPage() {
       : api.addProductUnit(selected,{unit_name:values.unit_name,scan_code:values.scan_code,conversion_factor:values.conversion_factor,is_base_unit:values.is_base_unit ?? false}),
     unitEditing?'Đã đổi tên đơn vị.':'Đã thêm đơn vị sản phẩm.',()=>{setUnitEditing(undefined);detail.reload();});
   }
-  return <div className="page-enter"><PageHeading eyebrow="DANH MỤC" title="Sản phẩm & đơn vị" description="Quản lý văn phòng phẩm, đơn vị quy đổi và mã quét trong một danh mục." action={<Space><RefreshButton onClick={list.reload} loading={list.loading}/>{admin&&<Button type="primary" icon={<PlusOutlined aria-hidden/>} onClick={()=>edit(null)}>Thêm sản phẩm</Button>}</Space>}/>
+  return <div className="page-enter"><PageHeading title="Sản phẩm & đơn vị" action={<Space><RefreshButton onClick={list.reload} loading={list.loading}/>{admin&&<Button type="primary" icon={<PlusOutlined aria-hidden/>} onClick={()=>edit(null)}>Thêm sản phẩm</Button>}</Space>}/>
     <Card className="content-card"><div className="table-toolbar"><Input aria-label="Tìm sản phẩm" prefix={<SearchOutlined/>} placeholder="Tìm mã hoặc tên sản phẩm…" allowClear maxLength={150} value={search} onChange={event=>{setSearch(event.target.value);setPaging(p=>({...p,page:1}));}}/><span className="muted">Danh mục và trạng thái từ hệ thống kho</span></div>
       <ErrorNotice error={list.error} retry={list.reload}/><DataTable<Product> rowKey="product_id" page={list.data} loading={list.loading} onPage={(page,limit)=>setPaging({page,limit})} columns={[
         {title:'Mã sản phẩm',dataIndex:'product_id',render:(value:string)=><Button type="link" className="table-link" onClick={()=>setSelected(value)}>{value}</Button>},

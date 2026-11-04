@@ -10,12 +10,12 @@ export default defineConfig({
   retries: 0,
   timeout: 60000,
   expect: { timeout: 12000 },
-  reporter: [['json',{ outputFile: 'test-results/e2e-results.json' }]],
+  reporter: [['list'],['json',{ outputFile: 'test-results/e2e-results.json' }]],
   use: { baseURL:'http://127.0.0.1:5173',browserName:'chromium',channel:'msedge',headless:true,
     viewport:{width:1440,height:1000},actionTimeout:12000, trace:'off',video:'off',screenshot:'off' },
   webServer: [
     // Never reuse an unknown backend: the launcher asserts the test DB marker.
-    {command:'node scripts/start-test-backend.mjs',url:'http://127.0.0.1:3000/api/health',reuseExistingServer:false,timeout:20000},
-    {command:'npm run dev',url:'http://127.0.0.1:5173',reuseExistingServer:false,timeout:20000},
+    {command:'node scripts/start-test-backend.mjs',url:'http://127.0.0.1:3000/api/health',reuseExistingServer:false,timeout:90000},
+    {command:'npm run dev',url:'http://127.0.0.1:5173',reuseExistingServer:false,timeout:90000},
   ],
 });

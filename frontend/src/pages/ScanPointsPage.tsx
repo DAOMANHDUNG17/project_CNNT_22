@@ -22,13 +22,13 @@ export default function ScanPointsPage() {
       :api.createScanPoint({scan_point_id:values.scan_point_id,point_name:values.point_name,is_active:values.is_active??true}),
     editing?'Đã cập nhật điểm quét.':'Đã tạo điểm quét.',()=>{setEditing(undefined);resource.reload();});
   }
-  return <div className="page-enter"><PageHeading eyebrow="ĐIỂM VẬN HÀNH" title="Điểm quét" description="Tổ chức nơi ghi nhận giao dịch và mở giao diện riêng cho từng trạm." action={<Space><RefreshButton onClick={resource.reload} loading={resource.loading}/>{admin&&<Button type="primary" icon={<PlusOutlined aria-hidden/>} onClick={()=>edit(null)}>Thêm điểm quét</Button>}</Space>}/>
-    <div className="station-banner"><span className="station-banner-icon"><EnvironmentOutlined/></span><div><h2>Mỗi trạm, một luồng công việc</h2><p>Mở đường dẫn riêng trên từng máy quét. Người dùng vẫn phải đăng nhập và được máy chủ kiểm tra quyền.</p></div><Tagline/></div>
+  return <div className="page-enter"><PageHeading title="Điểm quét" action={<Space><RefreshButton onClick={resource.reload} loading={resource.loading}/>{admin&&<Button type="primary" icon={<PlusOutlined aria-hidden/>} onClick={()=>edit(null)}>Thêm điểm quét</Button>}</Space>}/>
+    <div className="station-banner"><span className="station-banner-icon"><EnvironmentOutlined/></span><div><h2>Mỗi trạm, một luồng công việc</h2><p>Các điểm ghi nhận đã sẵn sàng. Giao diện quét mã và nhập/xuất kho đang chờ An phát triển.</p></div><Tagline/></div>
     <Card className="content-card"><ErrorNotice error={resource.error} retry={resource.reload}/><DataTable<ScanPoint> rowKey="scan_point_id" page={resource.data} loading={resource.loading} onPage={(page,limit)=>setPaging({page,limit})} columns={[
       {title:'Mã điểm quét',dataIndex:'scan_point_id',render:(value:string)=><strong className="id-text">{value}</strong>}, {title:'Tên điểm quét',dataIndex:'point_name'},
       {title:'Trạng thái',dataIndex:'is_active',render:(value:boolean)=><ActiveTag active={value}/>},
-      {title:'Đường dẫn trạm',key:'station',render:(_,row)=><Typography.Text copyable={{text:`${window.location.origin}/stock-movement?station=${encodeURIComponent(row.scan_point_id)}`}}>Mở cấu hình {row.scan_point_id}</Typography.Text>},
-      {title:'Thao tác',key:'actions',render:(_,row)=><Space>{user?.role!=='VIEWER'&&row.is_active&&<Link to={`/stock-movement?station=${encodeURIComponent(row.scan_point_id)}`}><Button size="small" icon={<ScanOutlined aria-hidden/>}>Mở trạm</Button></Link>}{admin&&<Button size="small" onClick={()=>edit(row)}>Sửa điểm quét</Button>}</Space>},
+      {title:'Đường dẫn trạm',key:'station',render:(_,row)=><Typography.Text copyable={{text:`${window.location.origin}/stock-movement?station=${encodeURIComponent(row.scan_point_id)}`}}>Cấu hình {row.scan_point_id}</Typography.Text>},
+      {title:'Thao tác',key:'actions',render:(_,row)=><Space>{user?.role!=='VIEWER'&&row.is_active&&<Link to={`/stock-movement?station=${encodeURIComponent(row.scan_point_id)}`}><Button size="small" icon={<ScanOutlined aria-hidden/>}>Trang module</Button></Link>}{admin&&<Button size="small" onClick={()=>edit(row)}>Sửa điểm quét</Button>}</Space>},
     ]}/></Card>
     <Modal open={editing!==undefined} title={editing?'Sửa điểm quét':'Thêm điểm quét'} footer={null} forceRender onCancel={()=>{if(!mutation.busy)setEditing(undefined);}}>
       <Form form={form} layout="vertical" requiredMark={false} clearOnDestroy onFinish={values=>{void save(values);}}>

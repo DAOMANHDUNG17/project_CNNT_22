@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#831C28" />
+    <link rel="icon" href="/favicon.svg" />
+    <title>Swagger API · Smart Warehouse</title>
+  </head>
+  <body>
+    <header class="docs-header"><a class="docs-brand" href="/">Smart Warehouse <span>Developer documentation</span></a><a href="/stock-movement">Về trang bàn giao ↗</a></header>
+    <main>
+      <section class="docs-intro"><span class="docs-eyebrow">TÀI LIỆU TÍCH HỢP FRONTEND</span><h1>REST API dành cho An</h1>
+        <p>Đặc tả OpenAPI hiện có của Smart Stationery Warehouse. Tra cứu đầy đủ tham số, request body, response và HTTP status.</p>
+        <div class="docs-links"><a href="/swagger/AN_FRONTEND_HANDOFF.md">Đọc tài liệu bàn giao</a><a href="/swagger/openapi.json" download="smart-warehouse-openapi.json">Tải OpenAPI JSON</a></div>
+        <aside><strong>Chế độ tra cứu.</strong> “Try it out” được tắt. Thử API qua typed client <code>docs/api-client.ts</code> theo tài liệu bàn giao, sử dụng phiên đăng nhập và CSRF hiện tại. Chỉ ghi dữ liệu trên môi trường PostgreSQL test độc lập.</aside>
+      </section>
+      <div id="swagger-ui"></div>
+    </main>
+    <script type="module" src="/src/swagger.ts"></script>
+  </body>
+</html>

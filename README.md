@@ -30,12 +30,26 @@ npm.cmd ci
 
 Dùng `npm.cmd` khi PowerShell chặn `npm.ps1`, không cần đổi Execution Policy. Không commit `.env`, secret hoặc `infra/phase3/local/`.
 
+### Chạy backend và frontend bằng một lệnh
+
+Với môi trường test đã được thiết lập, mở Docker Desktop rồi chạy tại thư mục gốc:
+
+```powershell
+npm.cmd run dev
+```
+
+Lệnh này bật PostgreSQL test và Redis bằng Docker Compose, đợi container healthy, chạy backend có tự reload, rồi chạy frontend Vite sau khi backend trả health thành công. Mở **http://127.0.0.1:5173**; backend ở **http://127.0.0.1:3000**. Nhấn `Ctrl+C` để dừng cả hai server; container test vẫn chạy để dùng lần sau.
+
+`dev` luôn dùng `infra/phase3/local/backend.env`, bỏ các biến cấu hình backend cũ được kế thừa từ terminal. Không chạy migration, seed hoặc bootstrap. Nếu chưa có dependencies frontend, chạy `npm.cmd --prefix frontend ci` một lần. Nếu chưa có môi trường test, làm theo mục **Môi trường test độc lập** bên dưới.
+
+Chạy riêng từng phần bằng `npm.cmd run dev:frontend` hoặc `npm.cmd run dev:backend`. Backend riêng cần chọn `APP_ENV_FILE` như bên dưới. `npm.cmd start` vẫn chỉ chạy backend theo cấu hình được chọn.
+
 Backend đọc `APP_ENV_FILE`, mặc định `.env` của project; biến môi trường tiến trình ưu tiên hơn file. Giữ `.env` hiện có cho kiểm tra chỉ đọc database chính. Chạy Backend test bằng file riêng:
 
 ```powershell
 $env:APP_ENV_FILE = (Resolve-Path 'infra/phase3/local/backend.env').Path
 npm.cmd start
-# Hoặc npm.cmd run dev
+# Hoặc npm.cmd run dev:backend
 ```
 
 Không để biến PG/Redis cũ trong tiến trình ghi đè cấu hình test. `.env.example` là mẫu đầy đủ hướng tới cluster test, cần điền credential riêng hoặc dùng secret file; không sao chép đè `.env` đang dùng.
@@ -109,6 +123,10 @@ Legacy integration đối chiếu bảy API đọc bằng factory cũ; hash/coun
 `check:main` dùng BEGIN READ ONLY và catalog, không gọi business function/DDL/GRANT. Exit 1/result=FAIL nghĩa là main chưa đủ điều kiện Backend mới, không tự cấp quyền. Bằng chứng: [main inspection](docs/backend-main-inspection.json), [29 API](docs/backend-api-verification.json), [legacy audit](docs/phase2-verification.json).
 
 ## Hợp đồng API và Frontend
+
+Frontend đã có thiết kế **Premium Red Enterprise** với font Be Vietnam Pro local. Chạy `npm.cmd run dev` ở thư mục gốc để mở cả backend test và frontend; xem [frontend README](frontend/README.md) và [frontend readiness](FRONTEND_READINESS.md).
+
+Module `/stock-movement` hiện hiển thị **Đợi An phát triển** theo phân công. An xem [tài liệu bàn giao](docs/AN_FRONTEND_HANDOFF.md) và Swagger tại **http://127.0.0.1:5173/swagger/**. Swagger đọc đặc tả hiện có, ở chế độ tra cứu; thử API ghi bằng typed client trên môi trường test với session/CSRF hiện tại.
 
 [OpenAPI](docs/openapi.json), [TypeScript client](docs/api-client.ts), [React/Ant Design](docs/FRONTEND_INTEGRATION.md), [Dashboard](docs/ADMIN_READ_API.md) là tài liệu hiện tại. Tài liệu phase 2/3 còn lại lưu lịch sử thiết kế/rollout.
 
