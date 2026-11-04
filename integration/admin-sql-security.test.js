@@ -13,7 +13,18 @@ test('isolated PostgreSQL admin ACL, last-admin guard and independent connection
 
   await t.test('runtime roles cannot bypass functions or read credentials with reader', async () => {
     await assert.rejects(ctx.db.query('SELECT password_hash FROM public.users LIMIT 0'), e => e.code === '42501');
-    await assert.rejects(ctx.db.query('UPDATE public.inventory SET quantity_base=quantity_base WHERE false'), e => e.code === '42501');
+    // PostgreSQL rejects writes at the transaction guard before checking ACLs.
+    await assert.rejects(ctx.db.query('UPDATE public.inventory SET quantity_base=quantity_base WHERE false'), e => e.code === '25006');
+    // Independently prove that disabling the session guard cannot bypass ACLs.
+    // This connection is guarded by startSecureServer's isolated-cluster check.
+    const reader = await ctx.db.connect();
+    try {
+      await reader.query('BEGIN READ WRITE');
+      await assert.rejects(reader.query('UPDATE public.inventory SET quantity_base=quantity_base WHERE false'), e => e.code === '42501');
+    } finally {
+      await reader.query('ROLLBACK');
+      reader.release();
+    }
     await assert.rejects(ctx.writer.query('UPDATE public.inventory SET quantity_base=quantity_base WHERE false'), e => e.code === '42501');
     await assert.rejects(ctx.writer.query('INSERT INTO public.products(product_id,product_name,base_unit) SELECT $1,$2,$3 WHERE false',
       ['NO_INSERT', 'No insertion', 'item']), e => e.code === '42501');

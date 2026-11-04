@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readConfig } from '../src/config/env.js';
+import { readSecureConfig } from '../src/config/secure.js';
 
 const valid = { PGHOST: '127.0.0.1', PGDATABASE: 'smart_warehouse', PGUSER: 'warehouse_readonly', PGPASSWORD: 'test-only' };
 
@@ -39,4 +40,24 @@ test('HTTP server accepts loopback hosts and rejects external bindings', () => {
   for (const HOST of ['0.0.0.0', '::', '192.168.1.2', 'example.com']) {
     assert.throws(() => readConfig({ ...valid, HOST }), /HOST/);
   }
+});
+
+const secure = { ...valid, WRITE_PGUSER: 'warehouse_backend', WRITE_PGPASSWORD: 'unit-only',
+  REDIS_PASSWORD: 'unit-only', ALLOWED_ORIGINS: 'http://127.0.0.1:5173' };
+
+test('secure config separates reader/writer credentials and enforces cookie/origin/schema policy', () => {
+  const config = readSecureConfig(secure);
+  assert.equal(config.writer.user, 'warehouse_backend');
+  assert.equal(config.writer.options, '-c default_transaction_read_only=off');
+  assert.equal(config.writer.host, config.database.host);
+  assert.equal(config.writer.database, config.database.database);
+  assert.equal(config.auth.secureCookies, false);
+  const production = readSecureConfig({ ...secure, NODE_ENV: 'production', SESSION_SECURE: 'false', ALLOWED_ORIGINS: 'https://warehouse.example' });
+  assert.equal(production.auth.secureCookies, true);
+  for (const changes of [
+    { WRITE_PGUSER: 'postgres' }, { PGUSER: 'other_reader' }, { PGSCHEMA: 'other_schema' },
+    { ALLOWED_ORIGINS: '' }, { ALLOWED_ORIGINS: 'http://localhost:5173/' },
+    { SESSION_SECURE: 'yes' }, { NODE_ENV: 'production' }, { REDIS_PORT: '65536' },
+    { WRITE_PGPASSWORD: '' }, { REDIS_PASSWORD: '' },
+  ]) assert.throws(() => readSecureConfig({ ...secure, ...changes }));
 });

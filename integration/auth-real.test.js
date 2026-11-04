@@ -197,3 +197,27 @@ test('real Redis health ACL allows PING and rejects reading or writing session k
   await assert.rejects(client.get('ssw:p3:session:synthetic-acl-probe'), /NOPERM/u);
   await assert.rejects(client.set('ssw:p3:session:synthetic-acl-probe', 'forbidden'), /NOPERM/u);
 });
+
+test('real Redis rate limiting, session ACL and unavailable-store behavior fail closed', async t => {
+  const ctx = await startSecureServer(t);
+  const username = `missing_${randomUUID().slice(0,8)}`;
+  const password = randomBytes(24).toString('base64url');
+  for (let attempt = 0; attempt < 5; attempt++) {
+    assert.equal((await ctx.request('/auth/login', { method: 'POST', body: { username, password } })).status, 401);
+  }
+  const limited = await ctx.request('/auth/login', { method: 'POST', body: { username, password } });
+  assert.equal(limited.status, 429);
+  assert.equal(limited.headers.get('retry-after'), '900');
+  assert.equal(limited.body.error.code, 'TOO_MANY_REQUESTS');
+  // Keys outside the session/rate namespaces and server administration are denied.
+  await assert.rejects(ctx.redis.get('unrelated:synthetic-acl-probe'), /NOPERM/u);
+  await assert.rejects(ctx.redis.set('unrelated:synthetic-acl-probe', 'denied'), /NOPERM/u);
+  await assert.rejects(ctx.redis.sendCommand(['CONFIG','GET','maxmemory']), /NOPERM/u);
+  const session = await ctx.login('p3_keeper');
+  ctx.redis.destroy(); // only this test client's connection; shared Redis keeps running
+  const unavailable = await ctx.request('/auth/me', { cookie: session.cookie });
+  assert.equal(unavailable.status, 503);
+  assert.equal(unavailable.body.error.code, 'SESSION_STORE_UNAVAILABLE');
+  assert.equal(unavailable.headers.get('retry-after'), '1');
+  assert.equal((await ctx.request('/health')).status, 200, 'Health only tests PostgreSQL.');
+});

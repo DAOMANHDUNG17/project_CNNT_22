@@ -141,7 +141,7 @@ test('filter/path validation rejects empty, oversized, malformed and unsupported
   }
 });
 
-test('new routes never accept write methods', async t => {
+test('legacy read factory: read routes never accept write methods', async t => {
   const request = await serve(t, async () => assert.fail('Write request reached DB'));
   for (const path of ['/products/SP001', '/inventory', '/inventory/SP001', '/transactions', '/scan-points']) {
     for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) assert.equal((await request(path, { method })).status, 404);

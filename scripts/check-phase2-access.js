@@ -10,7 +10,7 @@ try {
   console.info(JSON.stringify(await checkPhase2Access(db), null, 2));
 } catch (error) {
   console.error({ event: 'phase2_preflight_failed', code: error.code || 'CONFIG_ERROR', tables: error.tables || [] });
-  console.error('No privileges changed. Review the manual pgAdmin instructions in README.md.');
+  console.error('No privileges changed. Review scripts/verify-phase2-readonly.sql and BACKEND_READINESS.md; this checks the legacy read baseline.');
   process.exitCode = 1;
 } finally {
   if (db) await db.end();

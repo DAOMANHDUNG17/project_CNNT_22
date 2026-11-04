@@ -1,8 +1,26 @@
-﻿# Smart Stationery Warehouse — Backend Read API
+# Smart Stationery Warehouse — Backend
 
-Backend giai đoạn 2: Node.js 24+, Express 5, pg, PostgreSQL 17 tại 127.0.0.1:5432, database smart_warehouse, schema public. Tài khoản ứng dụng warehouse_readonly. API đọc dữ liệu thật; không chạy migration, seed, cấp quyền hoặc gọi record_stock_movement().
+Backend REST cho React + TypeScript + Ant Design: Node.js 24.7+, Express 5, PostgreSQL 17 và Redis. Có **29 HTTP operations / 24 path templates**, gồm Auth, quản trị danh mục/người dùng, nhập/xuất và dashboard.
 
-## 1. Cài đặt và cấu hình
+Kết quả nghiệm thu nằm trong [BACKEND_READINESS.md](BACKEND_READINESS.md). **Có thể tích hợp Frontend với môi trường test độc lập. Database chính chưa đủ schema/role/ACL cho Backend mới.** Không chạy migration, seed hoặc GRANT tự động trên database chính.
+
+## Kiến trúc
+
+```text
+React / Ant Design → same-origin /api proxy → Express
+                                            ├─ Auth / CSRF / RBAC → Redis sessions + rate limit
+                                            ├─ Reader → warehouse_readonly → SELECT kho
+                                            └─ Writer → warehouse_backend
+                                                ├─ SELECT hẹp: Auth / Users / kết quả giao dịch
+                                                ├─ record_stock_movement → warehouse_stock_executor
+                                                └─ admin_dashboard_write → warehouse_admin_executor
+```
+
+Hai executor là NOLOGIN, không phải tài khoản kết nối ứng dụng. Hai function dùng SECURITY DEFINER, owner riêng, search_path cố định, EXECUTE giới hạn. Reader/writer không có DML trực tiếp. Hai pool mặc định tối đa 5 connection **mỗi pool**, connect/statement timeout 5 giây; reader đặt default_transaction_read_only=on, writer=off. HTTP chỉ bind loopback.
+
+`src/server.js` là entry point có xác thực; chỉ listen sau preflight identity/ACL PostgreSQL và kết nối/PING Redis. `src/read-app.js` chỉ phục vụ regression legacy. Health chạy SELECT 1 trên reader, không chứng minh Redis/schema/ACL đầy đủ.
+
+## Cài đặt và cấu hình
 
 ```powershell
 Set-Location D:\Project_CNNT
@@ -10,144 +28,118 @@ node --version
 npm.cmd ci
 ```
 
-Dùng npm.cmd khi PowerShell chặn npm.ps1, không đổi Execution Policy. Giữ nguyên .env đã có mật khẩu. Trên máy mới, chép .env.example thành .env và tự điền mật khẩu:
+Dùng `npm.cmd` khi PowerShell chặn `npm.ps1`, không cần đổi Execution Policy. Không commit `.env`, secret hoặc `infra/phase3/local/`.
 
-```dotenv
-NODE_ENV=development
-HOST=127.0.0.1
-PORT=3000
-PGHOST=127.0.0.1
-PGPORT=5432
-PGDATABASE=smart_warehouse
-PGUSER=warehouse_readonly
-PGPASSWORD=
-PGSCHEMA=public
-PGPOOL_MAX=5
-PGCONNECT_TIMEOUT_MS=5000
-PGQUERY_TIMEOUT_MS=5000
-```
-
-Không để trống PGPASSWORD khi chạy thật; không commit .env. Biến môi trường tiến trình ưu tiên hơn .env. Mật khẩu có #/khoảng trắng cần dấu nháy phù hợp. Backend từ chối PGUSER=postgres. HTTP HOST chỉ nhận 127.0.0.1, ::1, localhost, không bind LAN/0.0.0.0.
-
-Pool tối đa 5 kết nối; timeout kết nối 5 giây, statement timeout 5 giây, client query timeout 6 giây. Mọi kết nối đặt default_transaction_read_only=on; quyền DB là giới hạn chính. pool.query() tự mượn/trả client. Ctrl+C/SIGTERM: ngừng HTTP, đợi request rồi pool.end(); quá 10 giây mới đóng cưỡng bức.
-
-## 2. Cấp SELECT thủ công trong pgAdmin
-
-Role warehouse_readonly đã tồn tại; không tạo lại role, đổi mật khẩu hoặc dùng quản trị viên trong Backend.
-
-| Đối tượng | Quyền ứng dụng |
-| --- | --- |
-| smart_warehouse | CONNECT, không CREATE |
-| public | USAGE, không CREATE |
-| products, product_units, inventory, stock_transactions, scan_points | SELECT, không quyền ghi/GRANT OPTION |
-| users và các cột users | Không SELECT hoặc quyền ghi |
-
-Khi cần bổ sung bốn quyền đọc giai đoạn 2:
-
-1. Dùng tài khoản quản trị có quyền cấp SELECT trong pgAdmin, chọn **Databases → smart_warehouse → Query Tool**.
-2. Mở scripts/grant-phase2-readonly.sql, bỏ vùng chọn và chạy toàn bộ bằng Execute Script/F5, xác nhận COMMIT. Nếu lỗi, chạy ROLLBACK; trong cùng Query Tool.
-3. Chạy scripts/verify-phase2-readonly.sql trên cùng DB, dòng cuối phải phase2_permissions=PASS. Xem quyền từng bảng/cột khi FAIL.
-4. Chạy npm.cmd run check:phase2 trên Backend để xác minh bằng tài khoản ứng dụng.
-
-Script chỉ GRANT SELECT trên bốn bảng hiện có. Không sửa dữ liệu/schema/account/password/function, cấp quyền users/sequence hoặc ALTER DEFAULT PRIVILEGES. Nếu phát hiện quyền PUBLIC/membership rộng hơn, script báo lỗi thay vì tự REVOKE. Không script GRANT nào được gọi từ npm, API hay test.
-
-create-warehouse-readonly.sql hiện chỉ là truy vấn kiểm tra role do người dùng chỉnh. verify-warehouse-readonly.sql lưu kỳ vọng giai đoạn 1, chỉ products được đọc; dùng verify-phase2-readonly.sql cho giai đoạn 2.
-
-## 3. Kiểm thử và chạy
+Backend đọc `APP_ENV_FILE`, mặc định `.env` của project; biến môi trường tiến trình ưu tiên hơn file. Giữ `.env` hiện có cho kiểm tra chỉ đọc database chính. Chạy Backend test bằng file riêng:
 
 ```powershell
-npm.cmd run check:db
-npm.cmd run check:phase2
-npm.cmd test
-npm.cmd run test:integration
-```
-
-check:db kiểm tra đăng nhập/read-only/metadata/SELECT products. check:phase2 kiểm tra identity/session, quyền hiệu lực bảng/cột, membership, CREATE và kiểu cột API cần dùng; không SELECT dữ liệu users. Nếu thiếu quyền, test:integration dừng ở preflight với mã lỗi, không cấp quyền/fallback account.
-
-Unit test dùng DB giả lập chỉ để kiểm tra logic/biên, không kết luận kết nối thật. Integration dùng PostgreSQL thật trên HTTP port tạm bind 127.0.0.1, đi qua nhiều trang, đối chiếu bảng gốc và dựng JOIN độc lập bằng JavaScript, kiểm tra tìm kiếm/lọc/400/404. Transaction so với snapshot và số lượng đã lưu. Không INSERT/UPDATE/DELETE kể cả để rollback.
-
-Integration so hash/count dữ liệu **năm bảng được phép đọc**, metadata sáu bảng và hash định nghĩa record_stock_movement() trước/sau; không đọc/hash dữ liệu users. Chạy khi không có hệ thống khác ghi đồng thời để phép đối chiếu ổn định.
-
-Trước khi chạy server, kiểm tra cổng 3000:
-
-```powershell
-Get-NetTCPConnection -State Listen -LocalPort 3000 -ErrorAction SilentlyContinue
-```
-
-Nếu Backend cũ đang chạy, dùng Ctrl+C tại terminal của nó rồi chạy lại để nạp code mới; không khởi động trùng. Khi cổng trống:
-
-```powershell
+$env:APP_ENV_FILE = (Resolve-Path 'infra/phase3/local/backend.env').Path
 npm.cmd start
 # Hoặc npm.cmd run dev
 ```
 
-Kiểm tra từ terminal khác:
+Không để biến PG/Redis cũ trong tiến trình ghi đè cấu hình test. `.env.example` là mẫu đầy đủ hướng tới cluster test, cần điền credential riêng hoặc dùng secret file; không sao chép đè `.env` đang dùng.
+
+| Biến | Ý nghĩa |
+| --- | --- |
+| NODE_ENV, HOST, PORT | development/production; loopback; mặc định 3000 |
+| APP_ENV_FILE | Chọn file riêng, nên dùng đường dẫn tuyệt đối |
+| PGHOST, PGPORT, PGDATABASE, PGSCHEMA | Reader/writer chung đích; runtime hỗ trợ public |
+| PGUSER, PGPASSWORD hoặc PGPASSWORD_FILE | Reader bắt buộc warehouse_readonly |
+| WRITE_PGUSER, WRITE_PGPASSWORD hoặc WRITE_PGPASSWORD_FILE | Writer bắt buộc warehouse_backend |
+| PGPOOL_MAX, PGCONNECT_TIMEOUT_MS, PGQUERY_TIMEOUT_MS | Áp dụng cho cả hai pool |
+| REDIS_HOST, REDIS_PORT, REDIS_USERNAME | Test dùng ACL user warehouse_session |
+| REDIS_PASSWORD hoặc REDIS_PASSWORD_FILE | Secret session, khác health credential |
+| ALLOWED_ORIGINS | Origin frontend chính xác, phân cách dấu phẩy, không path/dấu / cuối |
+| SESSION_SECURE | true cho HTTPS; production ép true và chỉ nhận HTTPS origins |
+
+`*_FILE` ưu tiên hơn secret trực tiếp. File chứa đúng secret, không BOM/newline/NUL; đường dẫn tương đối tính từ working directory. Không log password/hash/connection string.
+
+Cookie tên cố định `warehouse_session` khi HTTP, `__Host-warehouse_session` khi Secure; HttpOnly, SameSite=Lax, Path=/, không Domain. Idle 30 phút, absolute 8 giờ. Runtime không hỗ trợ biến env cho cookie name/SameSite/TTL.
+
+## Môi trường test độc lập
+
+PostgreSQL test: **127.0.0.1:5433 / smart_warehouse_phase3_test**. Database chính ở cổng 5432. Compose giữ image digest cố định cho PostgreSQL test và Redis. Với môi trường test đã tồn tại, mở Docker Desktop rồi chạy:
 
 ```powershell
-curl.exe -i http://127.0.0.1:3000/api/health
-curl.exe -i "http://127.0.0.1:3000/api/products?page=1&limit=3&q=SP"
-curl.exe -i http://127.0.0.1:3000/api/products/SP001
-curl.exe -i http://127.0.0.1:3000/api/inventory/SP001
-curl.exe -i "http://127.0.0.1:3000/api/transactions?movementType=OUT&productId=SP001"
-curl.exe -i http://127.0.0.1:3000/api/scan-points
+docker compose --env-file infra/phase3/local/compose.env -f infra/phase3/compose.review.yaml up -d
+docker compose --env-file infra/phase3/local/compose.env -f infra/phase3/compose.review.yaml ps
 ```
 
-Health chỉ chứng minh DB chạy SELECT 1, không thay thế preflight/integration các bảng.
+Không chạy lại bootstrap để reset database test. Chỉ với máy mới chưa có cấu hình/database test:
 
-## 4. REST API và tương thích
+```powershell
+npm.cmd run setup:test-infra
+# Khởi động hai container bằng Compose phía trên, đợi healthy.
+npm.cmd run setup:test-db
+```
 
-[Hợp đồng REST API cho React + Ant Design](docs/REST_API.md) mô tả request, response, query, status và phân trang.
+Setup sinh secret ngẫu nhiên, từ chối ghi đè. Bootstrap cần `C:\Program Files\PostgreSQL\17\bin\psql.exe`, database mới và marker `phase3.environment=isolated-test-v1`, từ chối cluster chứa database chính. SQL test có guard từ chối main; không được gọi tự động từ start/test.
 
-GET: /api/health, /api/products, /api/products/:id, /api/inventory, /api/inventory/:productId, /api/transactions, /api/scan-points.
+Fixture gồm `p3_admin`, `p3_keeper`, `p3_staff`, `p3_viewer`, tài khoản inactive/no-hash. Password ngẫu nhiên ở file `p3_*-password.txt` trong thư mục local; không có password mặc định trong tài liệu. PostgreSQL postgres chỉ phục vụ bootstrap/kiểm chứng **test**, không dùng làm runtime role.
 
-Giữ data/count và các trường products; thêm pagination. count là số hàng trong trang, pagination.total là tổng khớp bộ lọc. Mặc định page=1, limit=20, tối đa 100; products không còn trả toàn bộ bảng trong một response. bigint là chuỗi, timestamp ISO 8601 UTC. SQL chọn cột rõ ràng, values có tham số, schema được escape; không JOIN users hoặc trả user_id.
+Redis demo không persistence; restart làm mất phiên. Health ACL chỉ PING; session ACL chỉ các lệnh và namespace session/rate cần thiết. Backend dùng session credential.
 
-## 5. Chức năng từng file
+## Kiểm thử
 
-| File | Chức năng |
+```powershell
+npm.cmd test                       # 78 unit/regression, không cần DB
+npm.cmd run test:legacy-unit       # 31 kiểm tra factory đọc cũ
+npm.cmd run test:backend-unit      # 47 Auth/Admin/Dashboard/config/contract
+npm.cmd run test:integration       # Backend mới, PostgreSQL test + Redis thật
+npm.cmd run test:all               # unit + integration Backend mới
+```
+
+`test:secure-integration` là alias của `test:integration`. Integration mới đọc trực tiếp local/backend.env, kiểm tra đích test/marker, không phụ thuộc `.env` chính. Test tạo dữ liệu tổng hợp trên test, không reset/drop database. Trước mỗi fixture, chỉ xóa đúng rate-counter của tài khoản fixture và IP loopback trên Redis test để chạy lặp lại; không FLUSHDB/xóa phiên hàng loạt. Chạy một suite integration tại một thời điểm.
+
+Bộ mới kiểm tra 29 operation qua `docs/api-client.ts`, status/body theo OpenAPI, toàn bộ 26 operation cần phiên, CRUD theo contract, Auth/CSRF/RBAC, Redis TTL/rate/ACL/mất kết nối, UUID replay, chống xuất vượt tồn bằng hai PostgreSQL connection khác PID, và khởi động `server.js` qua APP_ENV_FILE.
+
+Các lệnh chỉ đọc database chính được tách riêng; dùng terminal với `.env` chính:
+
+```powershell
+Remove-Item Env:APP_ENV_FILE -ErrorAction SilentlyContinue
+npm.cmd run check:db
+npm.cmd run check:phase2
+npm.cmd run test:legacy-integration
+npm.cmd run check:main
+```
+
+Legacy integration đối chiếu bảy API đọc bằng factory cũ; hash/count năm bảng, metadata sáu bảng và function trước/sau. Không đọc dữ liệu users hoặc ghi dù để rollback. Không dùng kết quả này để kết luận Auth/Admin mới chạy trên main. Chữ ký và hash trước/sau vẫn được kiểm tra, không ép checksum của function trước hardening cho mọi phiên bản.
+
+`check:main` dùng BEGIN READ ONLY và catalog, không gọi business function/DDL/GRANT. Exit 1/result=FAIL nghĩa là main chưa đủ điều kiện Backend mới, không tự cấp quyền. Bằng chứng: [main inspection](docs/backend-main-inspection.json), [29 API](docs/backend-api-verification.json), [legacy audit](docs/phase2-verification.json).
+
+## Hợp đồng API và Frontend
+
+[OpenAPI](docs/openapi.json), [TypeScript client](docs/api-client.ts), [React/Ant Design](docs/FRONTEND_INTEGRATION.md), [Dashboard](docs/ADMIN_READ_API.md) là tài liệu hiện tại. Tài liệu phase 2/3 còn lại lưu lịch sử thiết kế/rollout.
+
+| Nhóm | Operations |
 | --- | --- |
-| src/server.js | Khởi động HTTP, lỗi listen/SIGINT/SIGTERM; giữ lifecycle giai đoạn 1 |
-| src/app.js | Ghép router, query parser, no-store, 404 và error handler |
-| src/config/env.js | .env, kiểm tra cấu hình/role, giới hạn host loopback |
-| src/db/pool.js | pg.Pool và lỗi idle, không log bí mật |
-| src/lifecycle.js | Đợi HTTP đóng trước khi kết thúc pool |
-| src/http/errors.js | HttpError 400/404 có code/message an toàn |
-| src/http/query.js | Validation query/path/pagination và tìm kiếm literal |
-| src/middleware/error-handler.js | JSON lỗi 400/404/500/503, log code/type |
-| src/routes/health.js | SELECT 1 mỗi request, giữ response giai đoạn 1 |
-| src/routes/products.js | Danh sách/tìm kiếm/phân trang và chi tiết/units |
-| src/routes/inventory.js | Danh sách và chi tiết tồn kho |
-| src/routes/transactions.js | Lịch sử với bộ lọc sản phẩm, IN/OUT, điểm quét |
-| src/routes/scan-points.js | Danh sách điểm quét |
-| src/repositories/read.js | SQL chỉ đọc, JOIN theo FK, count/page cùng snapshot; giữ bigint |
-| scripts/check-db.js | Kiểm tra kết nối/products giai đoạn 1 |
-| scripts/check-phase2-access.js | CLI preflight, exit 1 khi thiếu quyền/cấu hình |
-| scripts/lib/phase2-access.js | Identity/quyền, probe tên/kiểu cột LIMIT 0 |
-| scripts/grant-phase2-readonly.sql | Cấp SELECT thủ công bốn bảng, không tự chạy |
-| scripts/verify-phase2-readonly.sql | Kiểm tra quyền catalog, không thử ghi |
-| scripts/create-warehouse-readonly.sql | File kiểm tra role hiện có của người dùng |
-| scripts/verify-warehouse-readonly.sql | Kỳ vọng quyền lịch sử giai đoạn 1 |
-| test/api.test.js | Giữ mục tiêu hồi quy giai đoạn 1, cập nhật assertion đã duyệt |
-| test/config.test.js | Cấu hình và chặn bind ngoài localhost |
-| test/read-api.test.js | API mới, validation, SQL parameters, snapshot/bigint, projection/lỗi |
-| integration/database.test.js | Health/products thật, duyệt đủ các trang |
-| integration/read-api.test.js | Đối chiếu từng API với dữ liệu thật; xuất báo cáo JSON |
-| integration/support/audit.js | Hash/count năm bảng và metadata/function trước/sau |
-| docs/REST_API.md | Tài liệu dùng API cho Frontend |
-| docs/SCHEMA_PHASE2.md | Schema thực tế và fingerprint function |
-| docs/PHASE2_PLAN.md | Thiết kế đã duyệt, baseline trước triển khai |
-| docs/phase2-verification.json | Kết quả/hash gần nhất khi integration chạy tới phần báo cáo |
-| .env / .env.example / .gitignore | Cấu hình bí mật / mẫu không mật khẩu / loại bí mật và dependencies khỏi Git |
-| package.json / package-lock.json | Lệnh/dependencies / khóa phiên bản; không thêm dependency ở giai đoạn 2 |
+| Auth | POST login/logout, GET me/csrf: 4 |
+| Products và Units | GET list/detail, POST product/unit, PATCH product/status/unit: 7 |
+| Inventory | GET list/detail/low-stock: 3 |
+| Transactions | GET list/detail, POST nhập/xuất: 3 |
+| Scan Points | GET list, POST, PATCH: 3 |
+| Users | GET list, POST, PATCH profile/status, POST reset-password: 5 |
+| Dashboard | GET summary/stock-trends/top-products: 3 |
+| System | GET health: 1 |
 
-## 6. Kết quả và giới hạn
+| Quyền | ADMIN | KEEPER | STAFF | VIEWER |
+| --- | --- | --- | --- | --- |
+| Đọc kho/dashboard | Có | Có | Có | Có |
+| Nhập kho | Có | Có | Không | Không |
+| Xuất kho | Có | Có | Có | Không |
+| Đọc/quản trị users, ghi catalog | Có | Không | Không | Không |
 
-Xác minh giai đoạn 2 ngày 03/11/2026: PostgreSQL 17.11, warehouse_readonly, quyền PASS; **36/36 unit/regression**, **10/10 integration**. Bảy endpoint kể cả health được gọi thật và đối chiếu. Dữ liệu: 10 products, 18 product_units, 10 inventory, 2 transactions (1 IN, 1 OUT), 2 scan_points. [Báo cáo JSON](docs/phase2-verification.json) chứa hash và mã/số lượng đã xác minh.
+CRUD theo contract dùng status để vô hiệu product/user, is_active cho scan point; không có hard DELETE/DELETE unit. Unit cũ không đổi scan_code/product/factor/is_base_unit; dùng unit và mã quét mới. Base unit chỉ đổi trước khi có unit/history/tồn khác 0. Last active ADMIN không thể bị hạ quyền/vô hiệu hóa. Thay role/status/password tăng auth_version để thu hồi phiên.
 
-SP001 tồn "145"; giao dịch OUT đã lưu 15 gói, snapshot=1, quantity_base="15", inventory_after="145". Hash dữ liệu năm bảng, metadata sáu bảng và định nghĩa function khớp trước/sau test. Không đọc dữ liệu users hoặc thay mật khẩu/quyền.
+Frontend dùng `WarehouseApi('/api')` và development proxy cùng origin tới `http://127.0.0.1:3000`. Backend không có CORS cho fetch trực tiếp từ origin khác; ALLOWED_ORIGINS kiểm tra Origin/CSRF. Giữ hostname localhost/127.0.0.1 nhất quán và giữ nguyên Origin qua proxy.
 
-Hai nhánh chưa có dữ liệu thật: sản phẩm tồn tại nhưng thiếu inventory; snapshot lịch sử khác factor hiện tại. Có unit test cho các nhánh này, không sửa dữ liệu để tạo tình huống. Transactions chỉ có hai hàng, chưa kiểm chứng hiệu năng dữ liệu lớn.
+Client tự lấy CSRF trước lần ghi đầu tiên, dùng credentials include, giữ token trong memory. Không lưu session/password vào browser storage. List có data/count/pagination; Ant Design Table dùng pagination.total, không dùng count. Bigint/aggregate quantity/count là string, timestamp ISO UTC. Dashboard date range dùng ngày UTC tối đa 366 ngày bao gồm hai đầu; quantity ranking phải chọn baseUnit.
 
-Chưa có API ghi, đăng nhập/phân quyền, API users, frontend, CORS, sort tùy chọn, lọc thời gian, migration/index mới. Có thể đọc cả sản phẩm/điểm quét is_active=false. Frontend dùng cùng origin hoặc dev proxy localhost; không mở bind ngoài localhost.
+UUID v4 sinh một lần mỗi nghiệp vụ kho. Retry giữ nguyên UUID và payload: CREATED=201, DUPLICATE=200, khác payload=409. inventory_after là snapshot lịch sử. 503 TRANSACTION_OUTCOME_UNKNOWN có error.transaction_id: giữ pending và retry đúng yêu cầu; không tạo UUID mới. Client không tự retry write. 401 về login, 403 phân biệt quyền/Origin/CSRF, 429 tôn trọng Retry-After.
 
-Lỗi thường gặp: 28P01 sai thông tin xác thực; ECONNREFUSED host/port/dịch vụ; 42501 thiếu SELECT/USAGE; 42P01/42703 schema khác đã kiểm tra; 57014 timeout; EADDRINUSE cổng đã bị chiếm. HTTP chỉ trả lỗi chung, log không chứa password/SQL/connection string. Nếu hash khác do thay đổi đồng thời, dừng kết luận bất biến và kiểm tra lại lúc ổn định.
+## Database chính còn chờ triển khai
+
+Main hiện chỉ đủ baseline đọc. Ba role mới, auth_version, request_scan_code, stock function đã harden, admin function và ACL còn chờ triển khai thủ công. Không sửa password/hash/dữ liệu hiện hữu hoặc bỏ guard script test để chạy main tùy tiện. Xem [rollout pending](scripts/admin-dashboard/MAIN_ROLLOUT_PENDING.md) cùng báo cáo nghiệm thu.
+
+Trước khi bật Frontend với main cần triển khai schema/quyền đã review, cung cấp credential writer/Redis riêng và tài khoản ứng dụng đăng nhập hợp lệ, rồi kiểm tra môi trường đích. Không chạy CRUD integration này trên database chính.

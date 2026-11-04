@@ -2,6 +2,8 @@
 
 Backend contract: [OpenAPI 3.1](openapi.json). Có **29 HTTP operations** thuộc 24 path templates trong danh sách yêu cầu. File [api-client.ts](api-client.ts) là ví dụ client/types dành cho trình duyệt; không tạo React app, frontend build hoặc UI trong nhiệm vụ này. Tài liệu hợp đồng không thay thế báo cáo kiểm thử runtime.
 
+Nghiệm thu ngày 04/11/2026: 29/29 operations đã gọi thành công qua typed client trên PostgreSQL test và Redis thật. Xem [BACKEND_READINESS.md](../BACKEND_READINESS.md) để phân biệt kết quả môi trường test với schema/quyền database chính còn chờ triển khai.
+
 ## Kết nối và phiên
 
 Dùng cùng origin hoặc development proxy `/api` từ frontend sang `http://127.0.0.1:3000`. Mở frontend bằng hostname nhất quán: `localhost` và `127.0.0.1` là hai origin/cookie host khác nhau. Backend giữ bind loopback; không dùng `no-cors`, không mở CORS `*` với credentials để chữa sai cấu hình.
