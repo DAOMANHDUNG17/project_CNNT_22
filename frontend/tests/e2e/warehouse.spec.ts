@@ -291,7 +291,7 @@ test.describe.serial('real frontend + isolated backend',()=>{
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
     await page.screenshot({path:'artifacts/dashboard-mobile.png',fullPage:true,animations:'disabled'});
     await page.setViewportSize({width:1440,height:1000});await page.locator('.profile-button').click();await page.getByRole('menuitem',{name:'Đăng xuất'}).click();
-    await expect(page.getByRole('heading',{name:'Đăng nhập vào kho'})).toBeVisible();expect((await read(context,'/api/auth/me')).status()).toBe(401);
+    await expect(page.getByRole('heading',{name:'SmartWarehouse',exact:true})).toBeVisible();expect((await read(context,'/api/auth/me')).status()).toBe(401);
     await page.screenshot({path:'artifacts/login-desktop.png',fullPage:true,animations:'disabled'});
   });
 });
