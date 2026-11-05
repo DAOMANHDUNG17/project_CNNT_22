@@ -1,8 +1,195 @@
-# Smart Stationery Warehouse — Backend
+# SmartWarehouse — Quản lý kho văn phòng phẩm
 
-Backend REST cho React + TypeScript + Ant Design: Node.js 24.7+, Express 5, PostgreSQL 17 và Redis. Có **29 HTTP operations / 24 path templates**, gồm Auth, quản trị danh mục/người dùng, nhập/xuất và dashboard.
+Ứng dụng quản lý kho gồm **React + TypeScript + Ant Design**, backend **Node.js / Express**, **PostgreSQL** và **Redis Session**. Các trang quản lý sử dụng REST API thật; module Nhập / Xuất kho hiện hiển thị **Đợi An phát triển** theo phân công nhóm.
 
-Kết quả nghiệm thu nằm trong [BACKEND_READINESS.md](BACKEND_READINESS.md). **Có thể tích hợp Frontend với môi trường test độc lập. Database chính chưa đủ schema/role/ACL cho Backend mới.** Không chạy migration, seed hoặc GRANT tự động trên database chính.
+## 1. Chuẩn bị trước khi chạy
+
+Hướng dẫn dưới đây dùng **Windows + PowerShell**, thực hiện tại thư mục chứa repository sau khi clone. Thư mục dự án có thể nằm ở bất kỳ ổ đĩa nào, không bắt buộc là D:\Project_CNNT.
+
+| Công cụ | Yêu cầu |
+| --- | --- |
+| Git | Đã cài và có quyền clone repository |
+| Node.js và npm | Node **24.7 trở lên**; npm đi kèm Node |
+| Docker Desktop | Đang mở, dùng **Linux containers**, có Docker Compose |
+| PostgreSQL 17 command-line tools | Có file **C:\Program Files\PostgreSQL\17\bin\psql.exe** để chạy bước khởi tạo database lần đầu |
+
+PostgreSQL và Redis của ứng dụng chạy trong Docker. Trên Windows chỉ cần công cụ **psql 17** cho script bootstrap; không cần khởi động thêm PostgreSQL server trên máy. Script bootstrap hiện dùng cố định đường dẫn psql ở trên. Nếu dùng macOS/Linux hoặc cài psql ở vị trí khác, trao đổi với Dũng để điều chỉnh đường dẫn trước khi khởi tạo.
+
+Kiểm tra nhanh trong PowerShell:
+
+```powershell
+git --version
+node --version
+npm.cmd --version
+docker compose version
+Test-Path 'C:\Program Files\PostgreSQL\17\bin\psql.exe'
+```
+
+Lệnh cuối cần trả về **True**. Các cổng **3000, 5173, 5433, 6379** cần sẵn sàng cho dự án. Mở Docker Desktop và đợi Docker Engine sẵn sàng trước khi làm bước tiếp theo.
+
+## 2. Chạy lần đầu sau khi git clone
+
+**Chỉ thực hiện bộ lệnh này khi máy chưa có cấu hình/database test của dự án.** Mỗi máy tự tạo cấu hình, mật khẩu và database test riêng.
+
+```powershell
+# Clone và vào đúng thư mục gốc của dự án
+git clone https://github.com/DAOMANHDUNG17/project_CNNT_22.git
+cd project_CNNT_22
+
+# Cài dependencies cho cả backend và frontend
+npm.cmd ci
+npm.cmd --prefix frontend ci
+
+# Tạo cấu hình và mật khẩu local một lần
+npm.cmd run setup:test-infra
+
+# Khởi động PostgreSQL test và Redis, đợi container healthy
+docker compose --env-file infra/phase3/local/compose.env -f infra/phase3/compose.review.yaml up -d --wait --wait-timeout 120
+
+# Khởi tạo schema, quyền và tài khoản mẫu trên database test mới
+npm.cmd run setup:test-db
+
+# Chạy cả backend và frontend
+npm.cmd run dev
+```
+
+**Chạy từng bước; nếu một lệnh báo lỗi, xử lý lỗi đó trước khi chạy lệnh tiếp theo.** Lần đầu Docker cần tải image nên có thể mất thêm thời gian.
+
+Hai lệnh setup có nhiệm vụ khác nhau:
+
+- **setup:test-infra** tạo file cấu hình, Redis ACL và mật khẩu ngẫu nhiên tại **infra/phase3/local/**. Thư mục này được Git bỏ qua, vì vậy clone mới chưa có các file này.
+- **setup:test-db** tạo database test và dữ liệu mẫu, cấp credential cho các role runtime và tài khoản đăng nhập web. Chỉ chạy khi container đã healthy và database test chưa tồn tại.
+
+Không sao chép mật khẩu hoặc file cấu hình từ máy thành viên khác. Không commit **.env**, secret hay **infra/phase3/local/**. Các bước trên dùng **127.0.0.1:5433 / smart_warehouse_phase3_test**, không dùng database chính ở cổng 5432.
+
+## 3. Mở ứng dụng và đăng nhập
+
+| Nội dung | Địa chỉ |
+| --- | --- |
+| Giao diện / đăng nhập | http://127.0.0.1:5173/login |
+| Backend | http://127.0.0.1:3000 |
+| Kiểm tra kết nối database | http://127.0.0.1:3000/api/health |
+| Swagger / OpenAPI | http://127.0.0.1:5173/swagger/ |
+| Trang module của An | http://127.0.0.1:5173/stock-movement |
+
+Sau khi setup database thành công, dùng các tài khoản test sau. **Mỗi máy có mật khẩu riêng, không có mật khẩu mặc định chung.**
+
+| Tài khoản web | Vai trò | File mật khẩu trên máy của bạn |
+| --- | --- | --- |
+| p3_admin | Quản trị viên | infra/phase3/local/p3_admin-password.txt |
+| p3_keeper | Thủ kho | infra/phase3/local/p3_keeper-password.txt |
+| p3_staff | Nhân viên | infra/phase3/local/p3_staff-password.txt |
+| p3_viewer | Người xem | infra/phase3/local/p3_viewer-password.txt |
+
+Ví dụ, xem mật khẩu **đăng nhập web** của quản trị viên trong terminal riêng của bạn:
+
+```powershell
+Get-Content -Raw infra/phase3/local/p3_admin-password.txt
+```
+
+Nhập tên tài khoản **p3_admin** và mật khẩu vừa đọc vào trang đăng nhập. Không đưa nội dung mật khẩu vào Git, ảnh chụp hoặc tin nhắn công khai. Tài khoản inactive/no-hash có trong fixture để kiểm thử và không dùng đăng nhập demo.
+
+Giữ địa chỉ **127.0.0.1** nhất quán khi mở ứng dụng để cookie và proxy cùng hostname. Swagger hiện là tài liệu **chỉ tra cứu**, tắt Try it out; hướng dẫn thử API với session/CSRF nằm trong [bàn giao cho An](docs/AN_FRONTEND_HANDOFF.md).
+
+## 4. Những lần chạy tiếp theo
+
+Sau khi đã setup thành công, mỗi lần làm việc chỉ cần mở Docker Desktop, vào thư mục dự án và chạy:
+
+```powershell
+cd project_CNNT_22
+npm.cmd run dev
+```
+
+Nếu terminal đã ở thư mục gốc repository thì chỉ chạy **npm.cmd run dev**. Không chạy lại hai lệnh setup mỗi lần mở dự án.
+
+Lệnh dev tự bật container test, đợi healthy, chọn cấu hình backend test rồi mở backend và frontend trong cùng terminal. Trong Command Prompt hoặc terminal hỗ trợ npm bình thường, có thể dùng **npm run dev** tương đương.
+
+- **Ctrl+C**: dừng hai server frontend/backend; container vẫn chạy để dùng lại.
+- Docker giữ dữ liệu PostgreSQL trong volume. Redis demo không persistence; khi Redis khởi động lại, cần đăng nhập lại.
+- Nếu muốn dừng container sau buổi làm việc, dùng lệnh dưới đây; dữ liệu PostgreSQL vẫn được giữ:
+
+```powershell
+docker compose --env-file infra/phase3/local/compose.env -f infra/phase3/compose.review.yaml stop
+```
+
+### Khi lấy code mới từ đồng đội
+
+Dừng dev server, sau đó chạy tại thư mục gốc:
+
+```powershell
+git pull
+npm.cmd ci
+npm.cmd --prefix frontend ci
+npm.cmd run dev
+```
+
+Giữ nguyên cấu hình/volume local đang có. Nếu bản cập nhật yêu cầu thay đổi database, làm theo hướng dẫn riêng của người phụ trách backend; npm run dev không tự chạy migration hoặc reset dữ liệu.
+
+## 5. Lỗi thường gặp
+
+| Hiện tượng | Cách xử lý |
+| --- | --- |
+| PowerShell chặn npm.ps1 | Dùng **npm.cmd** như hướng dẫn; không cần đổi Execution Policy |
+| Docker không kết nối được / Docker Engine chưa chạy | Mở Docker Desktop, đợi Engine sẵn sàng; kiểm tra đang dùng Linux containers |
+| Missing local test configuration | Máy mới cần chạy **setup:test-infra**, Compose rồi **setup:test-db** theo mục 2 |
+| Test configuration already exists | Cấu hình đã có; giữ nguyên các file local, tiếp tục đúng bước còn thiếu thay vì tạo lại |
+| Test DB already exists | Không chạy lại bootstrap; thử **npm.cmd run dev**. Nếu trước đó bootstrap bị lỗi giữa chừng, nhờ Dũng kiểm tra trạng thái database |
+| setup:test-db lỗi ở bước gọi psql / status FAIL | Kiểm tra đúng psql 17 tại đường dẫn ở mục 1, rồi xem bước SQL nào báo lỗi. Không tự xóa volume để thử lại |
+| Port 3000/5173 is unavailable | Dừng phiên dev cũ của chính dự án hoặc ứng dụng đang dùng cổng đó trước khi chạy lại |
+| Docker báo trùng cổng 5433/6379 | Kiểm tra PostgreSQL/Redis hoặc stack Docker khác đang dùng cổng; trao đổi với nhóm trước khi đổi cấu hình |
+| Backend preflight thất bại / chưa healthy | Kiểm tra container bằng lệnh bên dưới và xác nhận bước setup:test-db đã hoàn tất |
+| Đăng nhập không đúng mật khẩu | Dùng đúng tài khoản và file mật khẩu local trên máy hiện tại, không dùng mật khẩu máy khác |
+| Quá nhiều lần đăng nhập / HTTP 429 | Đợi theo thông báo Retry-After; không gửi đăng nhập liên tục |
+
+Kiểm tra container:
+
+```powershell
+docker compose --env-file infra/phase3/local/compose.env -f infra/phase3/compose.review.yaml ps
+```
+
+## 6. Lệnh kiểm tra dành cho nhóm
+
+Chạy tại thư mục gốc repository:
+
+```powershell
+# Không cần database: backend unit/regression và frontend unit
+npm.cmd test
+npm.cmd --prefix frontend test
+
+# TypeScript và production build frontend
+npm.cmd --prefix frontend run typecheck
+npm.cmd --prefix frontend run build
+
+# Cần PostgreSQL/Redis test đã setup; tạo dữ liệu kiểm thử trên test
+npm.cmd run test:integration
+
+# Dừng dev server trước; E2E tự mở hai server riêng, dùng Microsoft Edge đã cài
+npm.cmd --prefix frontend run test:e2e
+```
+
+Chạy một suite integration/E2E tại một thời điểm. Hai kịch bản E2E phụ thuộc form Nhập/Xuất được đánh dấu chờ An; không tính là chức năng đã hoàn thiện.
+
+## 7. Tài liệu và phân công
+
+| Thành viên | Phụ trách |
+| --- | --- |
+| Dũng | Backend, PostgreSQL, Redis, API và tích hợp |
+| An | Frontend quét mã, nhập/xuất kho |
+| Nam | Hạ tầng mạng |
+| Vy | Kiểm thử |
+
+- [Hướng dẫn frontend](frontend/README.md)
+- [Bàn giao module nhập/xuất cho An](docs/AN_FRONTEND_HANDOFF.md)
+- [Hợp đồng OpenAPI](docs/openapi.json) và [typed API client](docs/api-client.ts)
+- [Hướng dẫn tích hợp frontend/backend](docs/FRONTEND_INTEGRATION.md)
+- [Backend readiness](BACKEND_READINESS.md) và [Frontend readiness](FRONTEND_READINESS.md)
+
+**Phạm vi hiện tại:** backend mới được nghiệm thu trên môi trường test độc lập. Database chính còn chờ rollout schema/quyền riêng; không chạy bootstrap, migration hoặc CRUD test trên main.
+
+---
+
+<details>
+<summary><strong>Tài liệu kỹ thuật backend và cấu hình chi tiết</strong></summary>
 
 ## Kiến trúc
 
@@ -161,3 +348,5 @@ UUID v4 sinh một lần mỗi nghiệp vụ kho. Retry giữ nguyên UUID và p
 Main hiện chỉ đủ baseline đọc. Ba role mới, auth_version, request_scan_code, stock function đã harden, admin function và ACL còn chờ triển khai thủ công. Không sửa password/hash/dữ liệu hiện hữu hoặc bỏ guard script test để chạy main tùy tiện. Xem [rollout pending](scripts/admin-dashboard/MAIN_ROLLOUT_PENDING.md) cùng báo cáo nghiệm thu.
 
 Trước khi bật Frontend với main cần triển khai schema/quyền đã review, cung cấp credential writer/Redis riêng và tài khoản ứng dụng đăng nhập hợp lệ, rồi kiểm tra môi trường đích. Không chạy CRUD integration này trên database chính.
+
+</details>
