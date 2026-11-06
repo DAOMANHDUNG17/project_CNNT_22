@@ -1,5 +1,7 @@
 # Bàn giao frontend nhập/xuất kho cho An
 
+> Tài liệu tham khảo của hệ thống cũ. API contract trong tài liệu này không ràng buộc backend mới.
+
 Ngày bàn giao: 05/11/2026 (Asia/Bangkok).
 
 ## 1. Phân công và trạng thái

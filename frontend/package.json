@@ -12,12 +12,11 @@
     "build": "npm run typecheck && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "node scripts/run-e2e.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^6.0.0",
     "@fontsource/be-vietnam-pro": "^5.3.0",
-    "@supabase/supabase-js": "^2.119.0",
     "antd": "^6.0.0",
     "dayjs": "^1.11.0",
     "react": "^19.2.0",

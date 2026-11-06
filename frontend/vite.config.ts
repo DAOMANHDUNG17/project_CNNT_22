@@ -4,14 +4,10 @@ import { readFileSync } from 'node:fs';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
 
-// Keep the original browser Origin: the backend checks it for login/CSRF.
-const proxy = { '/api': { target: 'http://127.0.0.1:3000', changeOrigin: false } };
-
-// Serve and package the canonical documentation; no copied OpenAPI or backend route.
+// Package the retired API contract as read-only reference material.
 function documentationAssets(): Plugin {
   const files = [
     { name: 'swagger/openapi.json', path: new URL('../docs/openapi.json', import.meta.url), type: 'application/json' },
-    { name: 'swagger/openapi-cloud.json', path: new URL('../docs/openapi-cloud.json', import.meta.url), type: 'application/json' },
     { name: 'swagger/AN_FRONTEND_HANDOFF.md', path: new URL('../docs/AN_FRONTEND_HANDOFF.md', import.meta.url), type: 'text/plain' },
   ];
   return {
@@ -30,13 +26,16 @@ function documentationAssets(): Plugin {
   };
 }
 export default defineConfig({
-  envDir: process.env.VITE_APP_PROFILE === 'supabase-cloud' ? false : undefined,
   plugins: [react(), documentationAssets()],
-  server: { host: '127.0.0.1', port: 5173, strictPort: true, proxy, fs: {
-    allow: [fileURLToPath(new URL('.',import.meta.url)), fileURLToPath(new URL('../docs',import.meta.url))],
+  server: { host: '127.0.0.1', port: 5173, strictPort: true, fs: {
+    allow: [
+      fileURLToPath(new URL('.',import.meta.url)),
+      fileURLToPath(new URL('../docs',import.meta.url)),
+      fileURLToPath(new URL('../node_modules',import.meta.url)),
+    ],
     deny: ['.env','.env.*','**/*-password.txt','**/tests/**','**/scripts/**','**/test-results/**'],
   } },
-  preview: { host: '127.0.0.1', port: 5173, strictPort: true, proxy },
+  preview: { host: '127.0.0.1', port: 5173, strictPort: true },
   build: { sourcemap: false, rollupOptions: { input: {
     app: fileURLToPath(new URL('./index.html', import.meta.url)),
     swagger: fileURLToPath(new URL('./swagger/index.html', import.meta.url)),
