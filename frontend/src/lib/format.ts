@@ -15,6 +15,12 @@ export function chartCount(value: string): number | null {
   return Number(value);
 }
 const errors: Record<string, string> = {
+  AUTH_SIGN_IN_FAILED: 'Không thể đăng nhập. Kiểm tra email, mật khẩu hoặc thử lại sau.',
+  AUTH_UNAVAILABLE: 'Không thể làm mới phiên đăng nhập. Vui lòng thử lại.',
+  AUTH_PROVIDER_UNAVAILABLE: 'Dịch vụ xác thực tạm thời không khả dụng.',
+  AUTHORIZATION_UNAVAILABLE: 'Chưa kiểm tra được quyền truy cập. Vui lòng thử lại.',
+  CLOUD_ACCOUNT_OPERATION_BLOCKED: 'Tạo tài khoản và đổi mật khẩu Cloud chưa khả dụng.',
+  PROVIDER_SIGN_OUT_FAILED: 'Phiên ứng dụng đã bị thu hồi. Chưa xác nhận đăng xuất với dịch vụ xác thực.',
   INVALID_CREDENTIALS: 'Tên đăng nhập hoặc mật khẩu không đúng.',
   AUTHENTICATION_REQUIRED: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
   FORBIDDEN: 'Tài khoản không có quyền thực hiện thao tác này.',

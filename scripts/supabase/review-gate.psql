@@ -1,0 +1,3 @@
+\echo 'BLOCKED: review artifacts only; provider lifecycle, memberships and staging approval are unresolved.'
+\echo 'See docs/SUPABASE_IMPLEMENTATION_STATUS.md. No mutation is authorized by this file.'
+\quit 3

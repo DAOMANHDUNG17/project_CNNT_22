@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { Alert, App, Avatar, Button, Card, Checkbox, Form, Input, Modal, Popconfirm, Select, Space, Tag } from 'antd';
 import { PlusOutlined, SearchOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import { api } from '../lib/api';
+import { isCloud } from '../auth/profile';
 import type { Role, User, UserCreate, UserPatch } from '../lib/api';
 import { useAuth } from '../auth/AuthProvider';
 import { useDebounced, useMutation, useResource } from '../hooks/useResource';
@@ -31,7 +32,8 @@ export default function UsersPage(){
     }else await mutation.run(()=>api.createUser({username:values.username,display_name:values.display_name,role:values.role,password:values.password,is_active:values.is_active??true}),
       'Đã tạo người dùng.',()=>{form.resetFields();setEditing(undefined);resource.reload();});
   }
-  return <div className="page-enter"><PageHeading title="Người dùng" action={<Space><RefreshButton onClick={resource.reload} loading={resource.loading}/><Button type="primary" icon={<PlusOutlined aria-hidden/>} onClick={()=>edit(null)}>Thêm người dùng</Button></Space>}/>
+  return <div className="page-enter"><PageHeading title="Người dùng" action={<Space><RefreshButton onClick={resource.reload} loading={resource.loading}/><Button type="primary" icon={<PlusOutlined aria-hidden/>} disabled={isCloud} onClick={()=>edit(null)}>Thêm người dùng</Button></Space>}/>
+    {isCloud&&<Alert className="role-banner" type="info" showIcon title="Tạo tài khoản và đặt lại mật khẩu Cloud chưa khả dụng."/>}
     <Alert className="role-banner" type="info" showIcon icon={<SafetyCertificateOutlined/>} title="Quyền quản trị đi cùng trách nhiệm" description="Thay đổi quyền, trạng thái hoặc mật khẩu sẽ thu hồi hiệu lực các phiên hiện có của người dùng. Hệ thống luôn giữ ít nhất một ADMIN hoạt động."/>
     <Card className="content-card"><div className="table-toolbar"><Input aria-label="Tìm người dùng" prefix={<SearchOutlined/>} placeholder="Tìm tài khoản hoặc tên hiển thị…" maxLength={150} allowClear value={search} onChange={e=>{setSearch(e.target.value);resetPage();}}/><Space wrap>
       <Select aria-label="Lọc vai trò" placeholder="Mọi vai trò" style={{minWidth:170}} allowClear value={role} options={roleOptions} onChange={value=>{setRole(value);resetPage();}}/>
@@ -40,7 +42,7 @@ export default function UsersPage(){
       {title:'Người dùng',dataIndex:'display_name',render:(value:string,row)=><Space><Avatar className="user-avatar">{value.slice(0,1)}</Avatar><div className="cell-product"><strong>{value}{row.user_id===principal?.user_id&&<Tag className="self-tag">Bạn</Tag>}</strong><small>{row.username}</small></div></Space>},
       {title:'Vai trò',dataIndex:'role',render:(value:Role)=><Tag color={value==='ADMIN'?'geekblue':value==='KEEPER'?'cyan':'default'}>{roleLabels[value]}</Tag>},
       {title:'Trạng thái',dataIndex:'is_active',render:(value:boolean)=><ActiveTag active={value}/>}, {title:'Ngày tạo (UTC+7)',dataIndex:'created_at',render:timestamp},
-      {title:'Thao tác',key:'actions',render:(_,row)=><Space wrap><Button size="small" onClick={()=>edit(row)}>Sửa người dùng</Button><Popconfirm title={row.is_active?'Khóa tài khoản?':'Mở khóa tài khoản?'} description="Phiên hiện có sẽ bị thu hồi." onConfirm={()=>mutation.run(()=>api.setUserStatus(row.user_id,!row.is_active),'Đã cập nhật trạng thái.',()=>afterSelf(row.user_id))}><Button size="small" danger={row.is_active} disabled={mutation.busy}>{row.is_active?'Khóa':'Mở khóa'}</Button></Popconfirm><Button size="small" onClick={()=>{passwordForm.resetFields();setReset(row);}}>Đặt lại mật khẩu</Button></Space>},
+      {title:'Thao tác',key:'actions',render:(_,row)=><Space wrap><Button size="small" onClick={()=>edit(row)}>Sửa người dùng</Button><Popconfirm title={row.is_active?'Khóa tài khoản?':'Mở khóa tài khoản?'} description="Phiên hiện có sẽ bị thu hồi." onConfirm={()=>mutation.run(()=>api.setUserStatus(row.user_id,!row.is_active),'Đã cập nhật trạng thái.',()=>afterSelf(row.user_id))}><Button size="small" danger={row.is_active} disabled={mutation.busy}>{row.is_active?'Khóa':'Mở khóa'}</Button></Popconfirm><Button size="small" disabled={isCloud} onClick={()=>{passwordForm.resetFields();setReset(row);}}>Đặt lại mật khẩu</Button></Space>},
     ]}/></Card>
     <Modal title={editing?'Sửa người dùng':'Thêm người dùng'} open={editing!==undefined} forceRender footer={null} onCancel={()=>{if(!mutation.busy){form.resetFields();setEditing(undefined);}}}>
       <Form name="user-editor" form={form} layout="vertical" requiredMark={false} clearOnDestroy onFinish={values=>{void save(values);}}>

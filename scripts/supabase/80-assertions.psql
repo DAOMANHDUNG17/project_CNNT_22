@@ -1,0 +1,44 @@
+\set ON_ERROR_STOP on
+\ir review-gate.psql
+-- Read-only catalog assertions INSIDE migration transaction, before COMMIT.
+DO $assert$
+DECLARE v_role text; v_table text; v_fn record;
+BEGIN
+ IF current_database()<>'postgres' OR current_user<>'postgres' THEN RAISE EXCEPTION 'Wrong target/operator'; END IF;
+ IF (SELECT count(*) FROM pg_roles WHERE rolname IN ('warehouse_readonly','warehouse_backend','warehouse_stock_executor','warehouse_admin_executor','warehouse_auth_executor'))<>5
+  OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname IN ('warehouse_readonly','warehouse_backend','warehouse_stock_executor','warehouse_admin_executor','warehouse_auth_executor')
+    AND (rolcanlogin OR rolinherit OR rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls)) THEN
+  RAISE EXCEPTION 'Roles must remain restricted and NOLOGIN before separate credential provisioning';
+ END IF;
+ IF EXISTS(SELECT 1 FROM pg_auth_members m JOIN pg_roles r ON r.oid=m.roleid JOIN pg_roles u ON u.oid=m.member JOIN pg_roles g ON g.oid=m.grantor
+   WHERE (r.rolname LIKE 'warehouse_%' OR u.rolname LIKE 'warehouse_%') AND NOT
+     (r.rolname IN ('warehouse_readonly','warehouse_backend','warehouse_stock_executor','warehouse_admin_executor','warehouse_auth_executor')
+      AND u.rolname='postgres' AND g.rolname='supabase_admin' AND m.admin_option AND NOT m.inherit_option AND NOT m.set_option)) THEN
+   RAISE EXCEPTION 'Unexpected membership or temporary SET capability not removed';
+ END IF;
+ FOREACH v_table IN ARRAY ARRAY['users','products','product_units','inventory','stock_transactions','scan_points','warehouse_auth_sessions','warehouse_rate_buckets'] LOOP
+  IF NOT EXISTS(SELECT 1 FROM pg_class c WHERE c.oid=to_regclass('public.'||v_table) AND c.relowner='postgres'::regrole AND c.relkind='r') THEN RAISE EXCEPTION 'Wrong object owner/type'; END IF;
+  FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+   IF has_table_privilege(v_role,'public.'||v_table,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN')
+     OR has_any_column_privilege(v_role,'public.'||v_table,'SELECT,INSERT,UPDATE,REFERENCES') THEN RAISE EXCEPTION 'Data API exposure'; END IF;
+  END LOOP;
+ END LOOP;
+ FOR v_fn IN SELECT p.*,pg_get_userbyid(p.proowner) AS owner FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+   WHERE n.nspname='public' AND p.proname IN ('record_stock_movement','admin_dashboard_write','resolve_cloud_principal','revoke_cloud_session','rate_cloud_request') LOOP
+  IF NOT v_fn.prosecdef OR v_fn.proconfig IS DISTINCT FROM ARRAY['search_path=pg_catalog, public, pg_temp']::text[]
+    OR v_fn.owner<>CASE v_fn.proname WHEN 'record_stock_movement' THEN 'warehouse_stock_executor' WHEN 'admin_dashboard_write' THEN 'warehouse_admin_executor' ELSE 'warehouse_auth_executor' END
+    OR EXISTS(SELECT 1 FROM aclexplode(coalesce(v_fn.proacl,acldefault('f',v_fn.proowner))) a
+       WHERE a.privilege_type='EXECUTE' AND (a.grantee NOT IN (v_fn.proowner,'warehouse_backend'::regrole) OR a.is_grantable)) THEN
+    RAISE EXCEPTION 'Unexpected function owner/path/ACL';
+  END IF;
+ END LOOP;
+ IF NOT EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid=to_regprocedure('warehouse_private.provider_session_window(uuid,uuid)')
+   AND p.proowner='postgres'::regrole AND p.prosecdef AND p.provolatile='s'
+   AND p.proconfig=ARRAY['search_path=""']::text[]
+   AND regexp_replace(trim(p.prosrc),'\s+',' ','g')='SELECT s.created_at, s.not_after FROM auth.sessions AS s WHERE s.id = p_session AND s.user_id = p_subject') THEN
+   RAISE EXCEPTION 'D8 bridge definition differs from approved source';
+ END IF;
+ -- No SQL execution evidence or password lifecycle solution yet. Keep pre-commit fail closed.
+ RAISE EXCEPTION 'Password lifecycle and staging security verification remain BLOCKED';
+END
+$assert$;

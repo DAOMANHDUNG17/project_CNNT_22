@@ -1,15 +1,18 @@
 import { WarehouseApi, ApiError } from '../../../docs/api-client';
+import { isCloud } from '../auth/profile';
 export * from '../../../docs/api-client';
 
 // Reuse the maintained protocol. Only observe authentication failures here.
-const client = new WarehouseApi('/api');
+const client = new WarehouseApi('/api', isCloud ? {
+  getAccessToken: async () => (await import('../auth/cloud-client')).accessToken(),
+} : undefined);
 let authEpoch = 0;
 export const api = new Proxy(client, {
   get(target, key, receiver) {
     const member: unknown = Reflect.get(target, key, receiver);
     if (typeof member !== 'function') return member;
     return (...args: unknown[]) => {
-      if (key === 'login' || key === 'logout') authEpoch++;
+      if (key === 'login' || key === 'confirmLogin' || key === 'logout') authEpoch++;
       const epoch = authEpoch;
       return Promise.resolve(Reflect.apply(member, target, args)).catch((error: unknown) => {
         if (epoch === authEpoch && error instanceof ApiError && error.status === 401) window.dispatchEvent(new Event('warehouse:unauthorized'));

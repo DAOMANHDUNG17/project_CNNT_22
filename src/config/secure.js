@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { readConfig } from './env.js';
+import { readRuntimeProfile } from './runtime-profile.js';
 
 export function secret(env, name) {
   if (env[`${name}_FILE`]) {
@@ -12,6 +13,7 @@ export function secret(env, name) {
 }
 
 export function readSecureConfig(env = process.env) {
+  if (readRuntimeProfile(env) !== 'local-test') throw new Error('Use the dedicated Cloud entry point; the Redis runtime cannot serve supabase-cloud.');
   const base = readConfig({ ...env, PGPASSWORD: secret(env, 'PGPASSWORD') });
   if (base.schema !== 'public') throw new Error('Secure runtime requires PGSCHEMA=public.');
   if (base.database.user !== 'warehouse_readonly' || env.WRITE_PGUSER !== 'warehouse_backend') {
