@@ -2,6 +2,8 @@
 
 Ứng dụng quản lý kho gồm **React + TypeScript + Ant Design**, backend **Node.js / Express**, **PostgreSQL** và **Redis Session**. Các trang quản lý sử dụng REST API thật; module Nhập / Xuất kho hiện hiển thị **Đợi An phát triển** theo phân công nhóm.
 
+**Profile Supabase Cloud đang được tích hợp, chưa được phép triển khai.** `npm run dev:cloud` đã có nhưng đang bị chặn trước khi kết nối do các quyết định bảo mật chưa được nghiệm thu. Xem [trạng thái và checkpoint](docs/SUPABASE_IMPLEMENTATION_STATUS.md), [hướng dẫn Cloud](docs/SUPABASE_RUNBOOK.md). Hướng dẫn bên dưới vẫn dành cho **local-test**; không trỏ các lệnh setup/test này vào Supabase.
+
 ## 1. Chuẩn bị trước khi chạy
 
 Hướng dẫn dưới đây dùng **Windows + PowerShell**, thực hiện tại thư mục chứa repository sau khi clone. Thư mục dự án có thể nằm ở bất kỳ ổ đĩa nào, không bắt buộc là D:\Project_CNNT.
@@ -38,7 +40,7 @@ cd project_CNNT_22
 
 # Cài dependencies cho cả backend và frontend
 npm.cmd ci
-npm.cmd --prefix frontend ci
+# Root postinstall tự chạy npm ci trong frontend.
 
 # Tạo cấu hình và mật khẩu local một lần
 npm.cmd run setup:test-infra

@@ -1,0 +1,34 @@
+\set ON_ERROR_STOP on
+\ir review-gate.psql
+-- Must be included inside the same reviewed transaction as the schema/functions/ACL.
+DO $guard$
+BEGIN
+  IF current_database()<>'postgres' OR current_user<>'postgres'
+    OR current_setting('server_version_num')::integer NOT BETWEEN 170000 AND 179999
+    OR NOT coalesce((SELECT ssl FROM pg_stat_ssl WHERE pid=pg_backend_pid()),false) THEN
+    RAISE EXCEPTION 'Unexpected target, operator, PostgreSQL major or TLS';
+  END IF;
+  IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname IN ('warehouse_readonly','warehouse_backend',
+    'warehouse_stock_executor','warehouse_admin_executor','warehouse_auth_executor')) THEN
+    RAISE EXCEPTION 'Roles already exist; inspect drift, do not reuse automatically';
+  END IF;
+  IF EXISTS(SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public'
+    AND c.relname IN ('users','products','product_units','inventory','stock_transactions','scan_points',
+      'warehouse_auth_sessions','warehouse_rate_buckets','users_user_id_seq','product_units_product_unit_id_seq')) THEN
+    RAISE EXCEPTION 'Warehouse objects already exist; refuse overwrite';
+  END IF;
+END
+$guard$;
+CREATE ROLE warehouse_readonly NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS CONNECTION LIMIT 16;
+CREATE ROLE warehouse_backend NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS CONNECTION LIMIT 16;
+CREATE ROLE warehouse_stock_executor NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+CREATE ROLE warehouse_admin_executor NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+CREATE ROLE warehouse_auth_executor NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+ALTER ROLE warehouse_readonly IN DATABASE postgres SET default_transaction_read_only=on;
+ALTER ROLE warehouse_backend IN DATABASE postgres SET default_transaction_read_only=off;
+-- Creator/schema scoped only. Do not revoke database-wide PUBLIC TEMP or managed schema privileges.
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON TABLES FROM anon,authenticated,service_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON SEQUENCES FROM anon,authenticated,service_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM anon,authenticated,service_role;
+-- Global PUBLIC function EXECUTE cannot be subtracted using a schema default.
+-- Explicit object revocation before COMMIT is mandatory for EVERY new function.

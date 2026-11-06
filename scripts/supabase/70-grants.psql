@@ -1,0 +1,48 @@
+\set ON_ERROR_STOP on
+\ir review-gate.psql
+-- Only explicitly named warehouse objects; do not touch managed tables/functions.
+REVOKE ALL ON public.users,public.products,public.product_units,public.inventory,public.stock_transactions,public.scan_points,
+ public.warehouse_auth_sessions,public.warehouse_rate_buckets FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON SEQUENCE public.users_user_id_seq,public.product_units_product_unit_id_seq FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.create_inventory_for_product(),public.advance_cloud_auth_cutoff() FROM PUBLIC,anon,authenticated,service_role;
+GRANT CONNECT ON DATABASE postgres TO warehouse_readonly,warehouse_backend;
+GRANT USAGE ON SCHEMA public TO warehouse_readonly,warehouse_backend,warehouse_stock_executor,warehouse_admin_executor,warehouse_auth_executor;
+GRANT SELECT ON public.products,public.product_units,public.inventory,public.stock_transactions,public.scan_points TO warehouse_readonly;
+GRANT SELECT(user_id,username,display_name,role,is_active,created_at,auth_version) ON public.users TO warehouse_backend;
+GRANT SELECT(transaction_id,product_id,product_unit_id,scan_point_id,movement_type,quantity_packages,
+ conversion_factor_snapshot,quantity_base,inventory_after,created_at) ON public.stock_transactions TO warehouse_backend;
+
+GRANT SELECT(user_id,role,is_active) ON public.users TO warehouse_stock_executor;
+GRANT SELECT(product_id,is_active) ON public.products TO warehouse_stock_executor;
+GRANT SELECT(product_id,product_unit_id,scan_code,conversion_factor) ON public.product_units TO warehouse_stock_executor;
+GRANT SELECT(scan_point_id,is_active) ON public.scan_points TO warehouse_stock_executor;
+GRANT SELECT(product_id,quantity_base),UPDATE(quantity_base,updated_at) ON public.inventory TO warehouse_stock_executor;
+GRANT SELECT(transaction_id,user_id,scan_point_id,movement_type,quantity_packages,request_scan_code,inventory_after),
+ INSERT(transaction_id,product_id,product_unit_id,scan_point_id,user_id,movement_type,quantity_packages,conversion_factor_snapshot,inventory_after,request_scan_code),
+ UPDATE(inventory_after) ON public.stock_transactions TO warehouse_stock_executor;
+
+-- Cloud excludes legacy password hash INSERT/UPDATE and user INSERT entirely.
+GRANT SELECT(user_id,username,display_name,role,is_active,created_at,auth_version),
+ UPDATE(username,display_name,role,is_active,auth_version) ON public.users TO warehouse_admin_executor;
+GRANT SELECT(product_id,product_name,base_unit,is_active,created_at),INSERT(product_id,product_name,base_unit,is_active),
+ UPDATE(product_name,base_unit,is_active) ON public.products TO warehouse_admin_executor;
+GRANT SELECT(product_unit_id,product_id,unit_name,conversion_factor,scan_code,is_base_unit),
+ INSERT(product_id,unit_name,conversion_factor,scan_code,is_base_unit),UPDATE(unit_name) ON public.product_units TO warehouse_admin_executor;
+GRANT SELECT(scan_point_id,point_name,is_active),INSERT(scan_point_id,point_name,is_active),UPDATE(point_name,is_active)
+ ON public.scan_points TO warehouse_admin_executor;
+GRANT SELECT(product_id,quantity_base),INSERT(product_id) ON public.inventory TO warehouse_admin_executor;
+GRANT SELECT(product_id) ON public.stock_transactions TO warehouse_admin_executor;
+
+GRANT SELECT(user_id,username,display_name,role,is_active,auth_version,auth_user_id,auth_state,auth_reauth_after)
+ ON public.users TO warehouse_auth_executor;
+GRANT SELECT,DELETE ON public.warehouse_auth_sessions,public.warehouse_rate_buckets TO warehouse_auth_executor;
+GRANT INSERT(session_id,user_id,auth_version,issued_at,last_seen_at,expires_at) ON public.warehouse_auth_sessions TO warehouse_auth_executor;
+GRANT INSERT ON public.warehouse_rate_buckets TO warehouse_auth_executor;
+GRANT UPDATE(last_seen_at,revoked_at) ON public.warehouse_auth_sessions TO warehouse_auth_executor;
+GRANT UPDATE(window_start,requests,expires_at) ON public.warehouse_rate_buckets TO warehouse_auth_executor;
+-- Managed Auth permissions deliberately NOT granted here. See 55-provider-contract.md.
+
+REVOKE CREATE ON SCHEMA public FROM warehouse_stock_executor,warehouse_admin_executor,warehouse_auth_executor;
+-- Remove only memberships created by this operator; provider ADMIN-only grant must remain.
+REVOKE warehouse_stock_executor,warehouse_admin_executor,warehouse_auth_executor FROM postgres GRANTED BY postgres;
+-- Runtime LOGIN/password provisioning is a separate approved operation, never part of this package.

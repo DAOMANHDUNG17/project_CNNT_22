@@ -86,8 +86,11 @@ export class ApiError extends Error {
 export class WarehouseApi {
   private csrfToken: string | undefined;
   private readonly baseUrl: string;
-  constructor(baseUrl = '/api') {
+  private readonly bearer?: { getAccessToken: () => Promise<string | null> };
+  constructor(baseUrl = '/api', bearer?: { getAccessToken: () => Promise<string | null> }) {
+    this.bearer = bearer;
     this.baseUrl = baseUrl.replace(/\/$/, '');
+    if (bearer && !/^\/api(?:\/[A-Za-z0-9_-]+)*$/u.test(this.baseUrl)) throw new Error('Bearer API must use a same-origin path.');
   }
 
   private async send<T>(method: string, path: string,
@@ -99,13 +102,18 @@ export class WarehouseApi {
     const suffix = parameters.size ? `?${parameters.toString()}` : '';
     const headers = new Headers({ Accept: 'application/json' });
     if (options.body !== undefined) headers.set('Content-Type', 'application/json');
-    if (options.csrf) {
+    if (this.bearer) {
+      const token = await this.bearer.getAccessToken();
+      if (!token && path !== '/health') throw new ApiError(401, 'AUTHENTICATION_REQUIRED', 'Authentication is required.');
+      if (token) headers.set('Authorization', `Bearer ${token}`);
+    }
+    if (options.csrf && !this.bearer) {
       if (!this.csrfToken) await this.csrf({ signal: options.signal });
       headers.set('X-CSRF-Token', this.csrfToken!);
     }
     // Browser supplies Origin automatically on unsafe requests. Do not forge it.
     const response = await fetch(`${this.baseUrl}${path}${suffix}`, {
-      method, headers, credentials: 'include', cache: 'no-store', signal: options.signal,
+      method, headers, credentials: this.bearer ? 'omit' : 'include', cache: 'no-store', signal: options.signal,
       ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
     });
     if (response.status === 204) return undefined as T;
@@ -121,10 +129,12 @@ export class WarehouseApi {
   }
 
   async login(username: string, password: string, options: RequestOptions = {}): Promise<Data<Identity>> {
+    if (this.bearer) throw new Error('Sign in with the Auth provider, then confirmLogin().');
     this.csrfToken = undefined;
     return this.send('POST', '/auth/login', { ...options, body: { username, password } });
   }
   async logout(options: RequestOptions = {}): Promise<void> {
+    if (this.bearer) return this.send('POST', '/auth/logout', options);
     // If CSRF fetch says the session is absent, still ask the server to clear
     // the stale HttpOnly cookie. JavaScript cannot clear it directly.
     try { await this.send<void>('POST', '/auth/logout', { ...options, csrf: true }); }
@@ -136,9 +146,18 @@ export class WarehouseApi {
   }
   me(options: RequestOptions = {}): Promise<Data<Identity>> { return this.send('GET', '/auth/me', options); }
   async csrf(options: RequestOptions = {}): Promise<Data<{ csrf_token: string }>> {
+    if (this.bearer) throw new Error('Bearer mode uses authCapabilities(), not a CSRF token.');
     const result = await this.send<Data<{ csrf_token: string }>>('GET', '/auth/csrf', options);
     this.csrfToken = result.data.csrf_token;
     return result;
+  }
+  confirmLogin(options: RequestOptions = {}): Promise<Data<Identity>> {
+    if (!this.bearer) throw new Error('confirmLogin requires Bearer mode.');
+    return this.send('POST', '/auth/login', { ...options, body: {} });
+  }
+  authCapabilities(options: RequestOptions = {}): Promise<Data<{ mode: 'bearer'; csrf_required: false }>> {
+    if (!this.bearer) throw new Error('authCapabilities requires Bearer mode.');
+    return this.send('GET', '/auth/csrf', options);
   }
   health(options: RequestOptions = {}): Promise<Health> { return this.send('GET', '/health', options); }
 

@@ -2,6 +2,8 @@
 
 Ngày rà soát: **05/11/2026**. Trạng thái: **chỉ phân tích và lập kế hoạch; chưa phê duyệt triển khai**.
 
+> Bản kế hoạch này ghi phạm vi plan-only ban đầu. Sau đó chủ dự án cung cấp master prompt full integration và duyệt D1–D7 để sửa source/chuẩn bị SQL offline. Trạng thái hiện tại ở [checkpoint](SUPABASE_IMPLEMENTATION_STATUS.md), bộ SQL review ở [scripts/supabase](../scripts/supabase/README.md). Các giới hạn không kết nối/không thực thi DB vẫn giữ nguyên. NO-GO với Backend nguyên trạng bên dưới được xử lý bằng checker Cloud riêng có giới hạn, **chưa được chứng minh trên provider**; thêm blocker D8/password lifecycle. Không coi nội dung lịch sử “chưa tạo SQL” là trạng thái mới nhất.
+
 ## 1. Kết luận và giới hạn
 
 Schema đích và ma trận quyền đã xác định từ source. Tuy nhiên, **NO-GO cho việc triển khai với Backend giữ nguyên ở thời điểm này**: có hai xung đột giữa chính sách startup hiện tại và hành vi Supabase được tài liệu chính thức mô tả:

@@ -1,0 +1,5081 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Smart Stationery Warehouse API — Supabase Cloud (review)",
+    "version": "2.0.0-review",
+    "description": "Prepared Cloud contract, NOT evidence of deployment. Bearer Supabase JWT, live PostgreSQL RBAC/session gate. No Redis/cookie CSRF. User creation and password reset are blocked pending provider lifecycle verification. All Cloud runtime activation remains blocked; see SUPABASE_IMPLEMENTATION_STATUS.md."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:3000",
+      "description": "Localhost backend. Frontend should use a same-origin /api proxy."
+    }
+  ],
+  "tags": [
+    {
+      "name": "Auth"
+    },
+    {
+      "name": "Products"
+    },
+    {
+      "name": "Product units"
+    },
+    {
+      "name": "Inventory"
+    },
+    {
+      "name": "Transactions"
+    },
+    {
+      "name": "Scan points"
+    },
+    {
+      "name": "Users"
+    },
+    {
+      "name": "Dashboard"
+    },
+    {
+      "name": "System"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/auth/login": {
+      "post": {
+        "operationId": "confirmLogin",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Confirm business identity after provider email/password sign-in",
+        "description": "Requires Bearer token and allowed Origin. Empty JSON object only; never send credentials to Express. No cookie is issued. Role comes from PostgreSQL, not JWT metadata.",
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Exact allowed browser origin. Browser fetch supplies this header automatically on POST/PATCH; do not try to forge it in application JavaScript."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityResponse"
+                }
+              }
+            },
+            "headers": {}
+          },
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identifier conflict, last active administrator protection, unsafe unit/base-unit change, insufficient stock or idempotency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16 KiB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type must be application/json.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts; wait before retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait."
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN",
+          "KEEPER",
+          "STAFF",
+          "VIEWER"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "maxProperties": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "operationId": "logout",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Revoke current session",
+        "description": "Revoke the verified application session, then the browser signs out of the provider with local scope. Does not claim all provider access tokens are invalidated. No retry on mutation failure; 503 requires explicit user retry.",
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Exact allowed browser origin. Browser fetch supplies this header automatically on POST/PATCH; do not try to forge it in application JavaScript."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Logged out; cookie cleared."
+          },
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN",
+          "KEEPER",
+          "STAFF",
+          "VIEWER"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "operationId": "me",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Get authenticated identity",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN",
+          "KEEPER",
+          "STAFF",
+          "VIEWER"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [],
+        "description": "Verify JWT, provider session mapping, active state and current business role. No role is trusted from user metadata."
+      }
+    },
+    "/api/auth/csrf": {
+      "get": {
+        "operationId": "authCapabilities",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Report Bearer authentication capability",
+        "responses": {
+          "200": {
+            "description": "Bearer capability",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "mode",
+                        "csrf_required"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "mode": {
+                          "const": "bearer"
+                        },
+                        "csrf_required": {
+                          "const": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN",
+          "KEEPER",
+          "STAFF",
+          "VIEWER"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [],
+        "description": "Compatibility URL only; no CSRF token is issued in Cloud mode."
+      }
+    },
+    "/api/products": {
+      "get": {
+        "operationId": "listProducts",
+        "tags": [
+          "Products"
+        ],
+        "summary": "List/search products",
+        "description": "Includes inactive products. product_id ascending; count is page size, pagination.total is total matches.",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "description": "Canonical positive decimal, not exponent/leading-zero notation."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 150,
+              "minLength": 1,
+              "description": "Non-empty text without leading/trailing whitespace or NUL."
+            },
+            "description": "Literal substring, case-insensitive; %, _ and ! do not become client wildcards."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN",
+          "KEEPER",
+          "STAFF",
+          "VIEWER"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "operationId": "createProduct",
+        "tags": [
+          "Products"
+        ],
+        "summary": "Create a product with zero initial inventory",
+        "description": "ADMIN only. Inventory initialization is performed by the approved database trigger; stock quantities cannot be supplied.",
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Exact allowed browser origin. Browser fetch supplies this header automatically on POST/PATCH; do not try to forge it in application JavaScript."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identifier conflict, last active administrator protection, unsafe unit/base-unit change, insufficient stock or idempotency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16 KiB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type must be application/json.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductCreate"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/products/{id}": {
+      "get": {
+        "operationId": "getProduct",
+        "tags": [
+          "Products"
+        ],
+        "summary": "Get product and its units",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 20,
+              "minLength": 1,
+              "description": "Non-empty text without leading/trailing whitespace or NUL."
+            },
+            "description": "Product identifier."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductDetailResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "PRODUCT_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN",
+          "KEEPER",
+          "STAFF",
+          "VIEWER"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "updateProduct",
+        "tags": [
+          "Products"
+        ],
+        "summary": "Update product metadata",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 20,
+              "minLength": 1,
+              "description": "Non-empty text without leading/trailing whitespace or NUL."
+            },
+            "description": "Product identifier."
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Exact allowed browser origin. Browser fetch supplies this header automatically on POST/PATCH; do not try to forge it in application JavaScript."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identifier conflict, last active administrator protection, unsafe unit/base-unit change, insufficient stock or idempotency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16 KiB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type must be application/json.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductPatch"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/products/{id}/status": {
+      "patch": {
+        "operationId": "setProductStatus",
+        "tags": [
+          "Products"
+        ],
+        "summary": "Activate/deactivate product",
+        "description": "Soft status change; never hard deletes historical products.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 20,
+              "minLength": 1,
+              "description": "Non-empty text without leading/trailing whitespace or NUL."
+            },
+            "description": "Product identifier."
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Exact allowed browser origin. Browser fetch supplies this header automatically on POST/PATCH; do not try to forge it in application JavaScript."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identifier conflict, last active administrator protection, unsafe unit/base-unit change, insufficient stock or idempotency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16 KiB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type must be application/json.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatusPatch"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/products/{id}/units": {
+      "post": {
+        "operationId": "addProductUnit",
+        "tags": [
+          "Product units"
+        ],
+        "summary": "Add a distinct product unit/scan code",
+        "description": "Conversion factor is positive int32; base-unit flag requires factor=1. At most one base unit per product. Existing scan code meanings cannot be reassigned.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 20,
+              "minLength": 1,
+              "description": "Non-empty text without leading/trailing whitespace or NUL."
+            },
+            "description": "Product identifier."
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Exact allowed browser origin. Browser fetch supplies this header automatically on POST/PATCH; do not try to forge it in application JavaScript."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductUnitResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identifier conflict, last active administrator protection, unsafe unit/base-unit change, insufficient stock or idempotency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16 KiB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type must be application/json.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnitCreate"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/product-units/{id}": {
+      "patch": {
+        "operationId": "updateProductUnit",
+        "tags": [
+          "Product units"
+        ],
+        "summary": "Rename unit; reject unsafe conversion changes",
+        "description": "Product binding and scan_code cannot be supplied or changed. conversion_factor/is_base_unit may only be echoed unchanged; use a new unit and scan code for a new conversion.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]{0,18}$",
+              "description": "PostgreSQL bigint identifier, 1..9223372036854775807, serialized as a string."
+            },
+            "description": "Product unit ID."
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Exact allowed browser origin. Browser fetch supplies this header automatically on POST/PATCH; do not try to forge it in application JavaScript."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductUnitResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identifier conflict, last active administrator protection, unsafe unit/base-unit change, insufficient stock or idempotency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16 KiB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type must be application/json.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnitPatch"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/inventory": {
+      "get": {
+        "operationId": "listInventory",
+        "tags": [
+          "Inventory"
+        ],
+        "summary": "List actual inventory rows",
+        "description": "No inferred zero stock for products missing an inventory row.",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "description": "Canonical positive decimal, not exponent/leading-zero notation."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN",
+          "KEEPER",
+          "STAFF",
+          "VIEWER"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/inventory/{productId}": {
+      "get": {
+        "operationId": "getInventory",
+        "tags": [
+          "Inventory"
+        ],
+        "summary": "Get inventory for a product",
+        "parameters": [
+          {
+            "name": "productId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 20,
+              "minLength": 1,
+              "description": "Non-empty text without leading/trailing whitespace or NUL."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "PRODUCT_NOT_FOUND or INVENTORY_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN",
+          "KEEPER",
+          "STAFF",
+          "VIEWER"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/inventory/low-stock": {
+      "get": {
+        "operationId": "lowStock",
+        "tags": [
+          "Inventory"
+        ],
+        "summary": "List stock below caller threshold",
+        "description": "Includes inactive products as existing inventory APIs do. Never sums incompatible base units or treats missing inventory as zero.",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "description": "Canonical positive decimal, not exponent/leading-zero notation."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "threshold",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$",
+              "description": "Exact non-negative integer serialized as a string. Do not convert to JavaScript Number.",
+              "maxLength": 19,
+              "default": "10"
+            },
+            "description": "0..9223372036854775807; below means strictly quantity_base < threshold. Missing inventory is not assumed zero."
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 150,
+              "minLength": 1,
+              "description": "Non-empty text without leading/trailing whitespace or NUL."
+            },
+            "description": "Literal substring, case-insensitive; %, _ and ! do not become client wildcards."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN",
+          "KEEPER",
+          "STAFF",
+          "VIEWER"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/transactions": {
+      "get": {
+        "operationId": "listTransactions",
+        "tags": [
+          "Transactions"
+        ],
+        "summary": "List stock history",
+        "description": "Filters AND together. created_at DESC then transaction_id DESC. Snapshot quantities come from stored history, names are current catalog labels; no actor/auth internals are returned.",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "description": "Canonical positive decimal, not exponent/leading-zero notation."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "productId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 20,
+              "minLength": 1,
+              "description": "Non-empty text without leading/trailing whitespace or NUL."
+            }
+          },
+          {
+            "name": "movementType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "IN",
+                "OUT"
+              ]
+            }
+          },
+          {
+            "name": "scanPointId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 20,
+              "minLength": 1,
+              "description": "Non-empty text without leading/trailing whitespace or NUL."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN",
+          "KEEPER",
+          "STAFF",
+          "VIEWER"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "operationId": "recordTransaction",
+        "tags": [
+          "Transactions"
+        ],
+        "summary": "Record an atomic IN/OUT movement",
+        "description": "ADMIN/KEEPER: IN+OUT; STAFF: OUT; VIEWER: forbidden. Actor is derived only from the authenticated session. Send exactly five fields; do not send user_id/role/factor/inventory. One UUID per confirmed action; same UUID and payload for all retries. 201 CREATED after confirmed COMMIT; 200 DUPLICATE returns stored snapshot. Database business errors rollback all effects. A lost COMMIT response does not imply rollback; retain UUID on 503 TRANSACTION_OUTCOME_UNKNOWN.",
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Exact allowed browser origin. Browser fetch supplies this header automatically on POST/PATCH; do not try to forge it in application JavaScript."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "DUPLICATE; one original committed transaction, no additional stock change.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MovementResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MovementResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identifier conflict, last active administrator protection, unsafe unit/base-unit change, insufficient stock or idempotency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16 KiB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type must be application/json.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid/inactive scan point/code/product for a new movement.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN",
+          "KEEPER",
+          "STAFF"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MovementCreate"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/transactions/{id}": {
+      "get": {
+        "operationId": "getTransaction",
+        "tags": [
+          "Transactions"
+        ],
+        "summary": "Get one historical transaction",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "TRANSACTION_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN",
+          "KEEPER",
+          "STAFF",
+          "VIEWER"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/scan-points": {
+      "get": {
+        "operationId": "listScanPoints",
+        "tags": [
+          "Scan points"
+        ],
+        "summary": "List scan points, including inactive",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "description": "Canonical positive decimal, not exponent/leading-zero notation."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanPointList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN",
+          "KEEPER",
+          "STAFF",
+          "VIEWER"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "operationId": "createScanPoint",
+        "tags": [
+          "Scan points"
+        ],
+        "summary": "Create scan point",
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Exact allowed browser origin. Browser fetch supplies this header automatically on POST/PATCH; do not try to forge it in application JavaScript."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanPointResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identifier conflict, last active administrator protection, unsafe unit/base-unit change, insufficient stock or idempotency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16 KiB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type must be application/json.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanPointCreate"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/scan-points/{id}": {
+      "patch": {
+        "operationId": "updateScanPoint",
+        "tags": [
+          "Scan points"
+        ],
+        "summary": "Rename or activate/deactivate scan point",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 20,
+              "minLength": 1,
+              "description": "Non-empty text without leading/trailing whitespace or NUL."
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Exact allowed browser origin. Browser fetch supplies this header automatically on POST/PATCH; do not try to forge it in application JavaScript."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanPointResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identifier conflict, last active administrator protection, unsafe unit/base-unit change, insufficient stock or idempotency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16 KiB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type must be application/json.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanPointPatch"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/users": {
+      "get": {
+        "operationId": "listUsers",
+        "tags": [
+          "Users"
+        ],
+        "summary": "List/search users without credentials",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "description": "Canonical positive decimal, not exponent/leading-zero notation."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 150,
+              "minLength": 1,
+              "description": "Non-empty text without leading/trailing whitespace or NUL."
+            },
+            "description": "Literal substring, case-insensitive; %, _ and ! do not become client wildcards."
+          },
+          {
+            "name": "role",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ADMIN",
+                "KEEPER",
+                "STAFF",
+                "VIEWER"
+              ]
+            }
+          },
+          {
+            "name": "isActive",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Exact query text true or false."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "operationId": "createUser",
+        "tags": [
+          "Users"
+        ],
+        "summary": "Create application user",
+        "description": "BLOCKED: authorized, otherwise valid Cloud requests return 503 CLOUD_ACCOUNT_OPERATION_BLOCKED. Existing local payload retained for compatibility only; no provider account/password mutation is implemented.",
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Exact allowed browser origin. Browser fetch supplies this header automatically on POST/PATCH; do not try to forge it in application JavaScript."
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identifier conflict, last active administrator protection, unsafe unit/base-unit change, insufficient stock or idempotency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16 KiB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type must be application/json.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserCreate"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/users/{id}": {
+      "patch": {
+        "operationId": "updateUser",
+        "tags": [
+          "Users"
+        ],
+        "summary": "Update username/display name/role",
+        "description": "Cannot demote the last active ADMIN. Role changes revoke sessions through internal auth version checks; auth_version is not returned.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]{0,18}$",
+              "description": "PostgreSQL bigint identifier, 1..9223372036854775807, serialized as a string."
+            },
+            "description": "Application user ID."
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Exact allowed browser origin. Browser fetch supplies this header automatically on POST/PATCH; do not try to forge it in application JavaScript."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identifier conflict, last active administrator protection, unsafe unit/base-unit change, insufficient stock or idempotency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16 KiB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type must be application/json.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserPatch"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/users/{id}/status": {
+      "patch": {
+        "operationId": "setUserStatus",
+        "tags": [
+          "Users"
+        ],
+        "summary": "Activate/deactivate user",
+        "description": "Cannot disable the last active ADMIN, including self-lock. No permanent user deletion. Status changes invalidate sessions.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]{0,18}$",
+              "description": "PostgreSQL bigint identifier, 1..9223372036854775807, serialized as a string."
+            },
+            "description": "Application user ID."
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Exact allowed browser origin. Browser fetch supplies this header automatically on POST/PATCH; do not try to forge it in application JavaScript."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identifier conflict, last active administrator protection, unsafe unit/base-unit change, insufficient stock or idempotency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16 KiB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type must be application/json.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatusPatch"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/users/{id}/reset-password": {
+      "post": {
+        "operationId": "resetUserPassword",
+        "tags": [
+          "Users"
+        ],
+        "summary": "Set a new user password and revoke sessions",
+        "description": "BLOCKED: authorized, otherwise valid Cloud requests return 503 CLOUD_ACCOUNT_OPERATION_BLOCKED. Existing local payload retained for compatibility only; no provider account/password mutation is implemented.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]{0,18}$",
+              "description": "PostgreSQL bigint identifier, 1..9223372036854775807, serialized as a string."
+            },
+            "description": "Application user ID."
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Exact allowed browser origin. Browser fetch supplies this header automatically on POST/PATCH; do not try to forge it in application JavaScript."
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identifier conflict, last active administrator protection, unsafe unit/base-unit change, insufficient stock or idempotency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16 KiB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type must be application/json.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordReset"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/dashboard/summary": {
+      "get": {
+        "operationId": "summary",
+        "tags": [
+          "Dashboard"
+        ],
+        "summary": "Get inventory KPIs without mixed-unit grand totals",
+        "description": "Counts all products and transactions, including inactive catalog entries. Low stock is strict below threshold; missing inventory is reported separately. inventory_totals are grouped by base_unit labels; no single total mixes distinct units.",
+        "parameters": [
+          {
+            "name": "threshold",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$",
+              "description": "Exact non-negative integer serialized as a string. Do not convert to JavaScript Number.",
+              "maxLength": 19,
+              "default": "10"
+            },
+            "description": "0..9223372036854775807; below means strictly quantity_base < threshold. Missing inventory is not assumed zero."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SummaryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN",
+          "KEEPER",
+          "STAFF",
+          "VIEWER"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/dashboard/stock-trends": {
+      "get": {
+        "operationId": "stockTrends",
+        "tags": [
+          "Dashboard"
+        ],
+        "summary": "Get daily/monthly UTC transaction counts",
+        "description": "Zero-count buckets represent actual absence of matching transactions. No quantity sum across incompatible units. First/last monthly buckets may cover partial months because date filters remain exact.",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "description": "Canonical positive decimal, not exponent/leading-zero notation."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Inclusive UTC YYYY-MM-DD. Defaults to 29 days before to."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Inclusive UTC YYYY-MM-DD. Defaults to current UTC date; window 1..366 days."
+          },
+          {
+            "name": "granularity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "day",
+                "month"
+              ],
+              "default": "day"
+            }
+          },
+          {
+            "name": "productId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 20,
+              "minLength": 1,
+              "description": "Non-empty text without leading/trailing whitespace or NUL."
+            }
+          },
+          {
+            "name": "movementType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "IN",
+                "OUT"
+              ]
+            }
+          },
+          {
+            "name": "scanPointId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 20,
+              "minLength": 1,
+              "description": "Non-empty text without leading/trailing whitespace or NUL."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrendList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN",
+          "KEEPER",
+          "STAFF",
+          "VIEWER"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/dashboard/top-products": {
+      "get": {
+        "operationId": "topProducts",
+        "tags": [
+          "Dashboard"
+        ],
+        "summary": "Rank products by movement count or same-unit quantities",
+        "description": "Quantity metrics remain per product/base_unit. Quantity ranking requires exact baseUnit filter; otherwise 400. Default ranks transaction counts across products. Ties use product_id ascending; only products with matching movements appear.",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "description": "Canonical positive decimal, not exponent/leading-zero notation."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Inclusive UTC YYYY-MM-DD. Defaults to 29 days before to."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Inclusive UTC YYYY-MM-DD. Defaults to current UTC date; window 1..366 days."
+          },
+          {
+            "name": "productId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 20,
+              "minLength": 1,
+              "description": "Non-empty text without leading/trailing whitespace or NUL."
+            }
+          },
+          {
+            "name": "movementType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "IN",
+                "OUT"
+              ]
+            }
+          },
+          {
+            "name": "scanPointId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 20,
+              "minLength": 1,
+              "description": "Non-empty text without leading/trailing whitespace or NUL."
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 150,
+              "minLength": 1,
+              "description": "Non-empty text without leading/trailing whitespace or NUL."
+            },
+            "description": "Literal substring, case-insensitive; %, _ and ! do not become client wildcards."
+          },
+          {
+            "name": "baseUnit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 30,
+              "minLength": 1,
+              "description": "Non-empty text without leading/trailing whitespace or NUL."
+            },
+            "description": "Required with inQuantity/outQuantity ranking."
+          },
+          {
+            "name": "sortBy",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "transactions",
+                "inQuantity",
+                "outQuantity"
+              ],
+              "default": "transactions"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopProductList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query, path, JSON body or unsupported/duplicate field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required, expired/revoked session or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Business role or exact browser Origin rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected internal/schema/permission error. SQL and credentials are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [
+          "ADMIN",
+          "KEEPER",
+          "STAFF",
+          "VIEWER"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/health": {
+      "get": {
+        "operationId": "health",
+        "tags": [
+          "System"
+        ],
+        "summary": "Public localhost DB connectivity probe",
+        "description": "Executes SELECT 1. Does not certify migrations, function ACLs, Redis, users or full application readiness.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database/Auth provider unavailable, stock outcome unknown or Cloud account operation blocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "const": "error"
+                    },
+                    "database": {
+                      "type": "string",
+                      "const": "disconnected"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "database"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "x-roles": [],
+        "security": [],
+        "parameters": []
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "transaction_id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "Present for TRANSACTION_OUTCOME_UNKNOWN; retry exactly this UUID and the original payload."
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "Pagination": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "totalPages": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "page",
+          "limit",
+          "total",
+          "totalPages"
+        ]
+      },
+      "Product": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "product_name": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "base_unit": {
+            "type": "string",
+            "maxLength": 30,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 UTC timestamp."
+          }
+        },
+        "required": [
+          "product_id",
+          "product_name",
+          "base_unit",
+          "is_active",
+          "created_at"
+        ]
+      },
+      "ProductUnit": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "product_unit_id": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "description": "PostgreSQL bigint identifier, 1..9223372036854775807, serialized as a string."
+          },
+          "product_id": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "unit_name": {
+            "type": "string",
+            "maxLength": 30,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "conversion_factor": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "scan_code": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "is_base_unit": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "product_unit_id",
+          "product_id",
+          "unit_name",
+          "conversion_factor",
+          "scan_code",
+          "is_base_unit"
+        ]
+      },
+      "Inventory": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "product_name": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "base_unit": {
+            "type": "string",
+            "maxLength": 30,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "quantity_base": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$",
+            "description": "Exact non-negative integer serialized as a string. Do not convert to JavaScript Number."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 UTC timestamp."
+          }
+        },
+        "required": [
+          "product_id",
+          "product_name",
+          "base_unit",
+          "is_active",
+          "quantity_base",
+          "updated_at"
+        ]
+      },
+      "ScanPoint": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "scan_point_id": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "point_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "is_active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "scan_point_id",
+          "point_name",
+          "is_active"
+        ]
+      },
+      "Identity": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "description": "PostgreSQL bigint identifier, 1..9223372036854775807, serialized as a string."
+          },
+          "username": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "ADMIN",
+              "KEEPER",
+              "STAFF",
+              "VIEWER"
+            ]
+          }
+        },
+        "required": [
+          "user_id",
+          "username",
+          "display_name",
+          "role"
+        ]
+      },
+      "User": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "description": "PostgreSQL bigint identifier, 1..9223372036854775807, serialized as a string."
+          },
+          "username": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "ADMIN",
+              "KEEPER",
+              "STAFF",
+              "VIEWER"
+            ]
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 UTC timestamp."
+          }
+        },
+        "required": [
+          "user_id",
+          "username",
+          "display_name",
+          "role",
+          "is_active",
+          "created_at"
+        ]
+      },
+      "Movement": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "product_id": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "product_unit_id": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "description": "PostgreSQL bigint identifier, 1..9223372036854775807, serialized as a string."
+          },
+          "scan_point_id": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "movement_type": {
+            "type": "string",
+            "enum": [
+              "IN",
+              "OUT"
+            ]
+          },
+          "quantity_packages": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "conversion_factor_snapshot": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "quantity_base": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$",
+            "description": "Exact non-negative integer serialized as a string. Do not convert to JavaScript Number."
+          },
+          "inventory_after": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$",
+            "description": "Exact non-negative integer serialized as a string. Do not convert to JavaScript Number."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 UTC timestamp."
+          }
+        },
+        "required": [
+          "transaction_id",
+          "product_id",
+          "product_unit_id",
+          "scan_point_id",
+          "movement_type",
+          "quantity_packages",
+          "conversion_factor_snapshot",
+          "quantity_base",
+          "inventory_after",
+          "created_at"
+        ]
+      },
+      "ProductCreate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "product_name": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "base_unit": {
+            "type": "string",
+            "maxLength": 30,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "is_active": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "product_id",
+          "product_name",
+          "base_unit"
+        ]
+      },
+      "ProductPatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "product_name": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "base_unit": {
+            "type": "string",
+            "maxLength": 30,
+            "minLength": 1,
+            "description": "Can change only before units/history/nonzero inventory exist; otherwise 409 UNSAFE_UNIT_CHANGE."
+          }
+        },
+        "required": [],
+        "minProperties": 1
+      },
+      "StatusPatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "is_active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "is_active"
+        ]
+      },
+      "UnitCreate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "unit_name": {
+            "type": "string",
+            "maxLength": 30,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "conversion_factor": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "scan_code": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "is_base_unit": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "unit_name",
+          "conversion_factor",
+          "scan_code"
+        ]
+      },
+      "UnitPatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "unit_name": {
+            "type": "string",
+            "maxLength": 30,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "conversion_factor": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647,
+            "description": "Existing conversion factor is immutable; sending a changed value returns 409 UNSAFE_UNIT_CHANGE."
+          },
+          "is_base_unit": {
+            "type": "boolean",
+            "description": "Existing base-unit flag is immutable; a changed value returns 409."
+          }
+        },
+        "required": [],
+        "minProperties": 1
+      },
+      "ScanPointCreate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "scan_point_id": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "point_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "is_active": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "scan_point_id",
+          "point_name"
+        ]
+      },
+      "ScanPointPatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "point_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "is_active": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "minProperties": 1
+      },
+      "UserCreate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "ADMIN",
+              "KEEPER",
+              "STAFF",
+              "VIEWER"
+            ]
+          },
+          "password": {
+            "type": "string",
+            "minLength": 12,
+            "maxLength": 128,
+            "writeOnly": true,
+            "description": "12?128 Unicode characters, at most 512 UTF-8 bytes, no NUL. Never trim or persist this value in frontend storage."
+          },
+          "is_active": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "username",
+          "display_name",
+          "role",
+          "password"
+        ]
+      },
+      "UserPatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "ADMIN",
+              "KEEPER",
+              "STAFF",
+              "VIEWER"
+            ]
+          }
+        },
+        "required": [],
+        "minProperties": 1
+      },
+      "PasswordReset": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "type": "string",
+            "minLength": 12,
+            "maxLength": 128,
+            "writeOnly": true,
+            "description": "12?128 Unicode characters, at most 512 UTF-8 bytes, no NUL. Never trim or persist this value in frontend storage."
+          }
+        },
+        "required": [
+          "password"
+        ]
+      },
+      "MovementCreate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+            "description": "One UUID v4 per confirmed business action. Retry the exact action with the same UUID."
+          },
+          "scan_point_id": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "scan_code": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "movement_type": {
+            "type": "string",
+            "enum": [
+              "IN",
+              "OUT"
+            ]
+          },
+          "quantity_packages": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          }
+        },
+        "required": [
+          "transaction_id",
+          "scan_point_id",
+          "scan_code",
+          "movement_type",
+          "quantity_packages"
+        ]
+      },
+      "Trend": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "period_start": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 UTC timestamp."
+          },
+          "in_count": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$",
+            "description": "Exact non-negative integer serialized as a string. Do not convert to JavaScript Number."
+          },
+          "out_count": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$",
+            "description": "Exact non-negative integer serialized as a string. Do not convert to JavaScript Number."
+          },
+          "total_count": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$",
+            "description": "Exact non-negative integer serialized as a string. Do not convert to JavaScript Number."
+          }
+        },
+        "required": [
+          "period_start",
+          "in_count",
+          "out_count",
+          "total_count"
+        ]
+      },
+      "TopProduct": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "product_name": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "base_unit": {
+            "type": "string",
+            "maxLength": 30,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "transaction_count": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$",
+            "description": "Exact non-negative integer serialized as a string. Do not convert to JavaScript Number."
+          },
+          "in_count": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$",
+            "description": "Exact non-negative integer serialized as a string. Do not convert to JavaScript Number."
+          },
+          "out_count": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$",
+            "description": "Exact non-negative integer serialized as a string. Do not convert to JavaScript Number."
+          },
+          "quantity_in_base": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$",
+            "description": "Exact non-negative integer serialized as a string. Do not convert to JavaScript Number."
+          },
+          "quantity_out_base": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$",
+            "description": "Exact non-negative integer serialized as a string. Do not convert to JavaScript Number."
+          }
+        },
+        "required": [
+          "product_id",
+          "product_name",
+          "base_unit",
+          "transaction_count",
+          "in_count",
+          "out_count",
+          "quantity_in_base",
+          "quantity_out_base"
+        ]
+      },
+      "Summary": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "products": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "total": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$",
+                "description": "Exact non-negative integer serialized as a string. Do not convert to JavaScript Number."
+              },
+              "active": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$",
+                "description": "Exact non-negative integer serialized as a string. Do not convert to JavaScript Number."
+              },
+              "inactive": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$",
+                "description": "Exact non-negative integer serialized as a string. Do not convert to JavaScript Number."
+              },
+              "missing_inventory": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$",
+                "description": "Exact non-negative integer serialized as a string. Do not convert to JavaScript Number."
+              }
+            },
+            "required": [
+              "total",
+              "active",
+              "inactive",
+              "missing_inventory"
+            ]
+          },
+          "inventory_totals": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "base_unit": {
+                  "type": "string",
+                  "maxLength": 30,
+                  "minLength": 1,
+                  "description": "Non-empty text without leading/trailing whitespace or NUL."
+                },
+                "quantity_base": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)$",
+                  "description": "Exact non-negative integer serialized as a string. Do not convert to JavaScript Number."
+                }
+              },
+              "required": [
+                "base_unit",
+                "quantity_base"
+              ]
+            }
+          },
+          "transactions": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "IN": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$",
+                "description": "Exact non-negative integer serialized as a string. Do not convert to JavaScript Number."
+              },
+              "OUT": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$",
+                "description": "Exact non-negative integer serialized as a string. Do not convert to JavaScript Number."
+              },
+              "total": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$",
+                "description": "Exact non-negative integer serialized as a string. Do not convert to JavaScript Number."
+              }
+            },
+            "required": [
+              "IN",
+              "OUT",
+              "total"
+            ]
+          },
+          "low_stock": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "threshold": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$",
+                "description": "Exact non-negative integer serialized as a string. Do not convert to JavaScript Number."
+              },
+              "product_count": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$",
+                "description": "Exact non-negative integer serialized as a string. Do not convert to JavaScript Number."
+              }
+            },
+            "required": [
+              "threshold",
+              "product_count"
+            ]
+          }
+        },
+        "required": [
+          "products",
+          "inventory_totals",
+          "transactions",
+          "low_stock"
+        ]
+      },
+      "Health": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok"
+          },
+          "database": {
+            "type": "string",
+            "const": "connected"
+          }
+        },
+        "required": [
+          "status",
+          "database"
+        ]
+      },
+      "ProductDetail": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "product_name": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "base_unit": {
+            "type": "string",
+            "maxLength": 30,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 UTC timestamp."
+          },
+          "units": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductUnit"
+            }
+          }
+        },
+        "required": [
+          "product_id",
+          "product_name",
+          "base_unit",
+          "is_active",
+          "created_at",
+          "units"
+        ]
+      },
+      "Transaction": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "product_id": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "product_unit_id": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "description": "PostgreSQL bigint identifier, 1..9223372036854775807, serialized as a string."
+          },
+          "scan_point_id": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "movement_type": {
+            "type": "string",
+            "enum": [
+              "IN",
+              "OUT"
+            ]
+          },
+          "quantity_packages": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "conversion_factor_snapshot": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "quantity_base": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$",
+            "description": "Exact non-negative integer serialized as a string. Do not convert to JavaScript Number."
+          },
+          "inventory_after": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$",
+            "description": "Exact non-negative integer serialized as a string. Do not convert to JavaScript Number."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 UTC timestamp."
+          },
+          "product_name": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "unit_name": {
+            "type": "string",
+            "maxLength": 30,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          },
+          "point_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "description": "Non-empty text without leading/trailing whitespace or NUL."
+          }
+        },
+        "required": [
+          "transaction_id",
+          "product_id",
+          "product_unit_id",
+          "scan_point_id",
+          "movement_type",
+          "quantity_packages",
+          "conversion_factor_snapshot",
+          "quantity_base",
+          "inventory_after",
+          "created_at",
+          "product_name",
+          "unit_name",
+          "point_name"
+        ]
+      },
+      "ProductResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Product"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "ProductDetailResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ProductDetail"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "ProductUnitResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ProductUnit"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "InventoryResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Inventory"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "ScanPointResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ScanPoint"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "IdentityResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Identity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "UserResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/User"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "TransactionResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Transaction"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "SummaryResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Summary"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "ProductList": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Product"
+            }
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        },
+        "required": [
+          "data",
+          "count",
+          "pagination"
+        ]
+      },
+      "InventoryList": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Inventory"
+            }
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        },
+        "required": [
+          "data",
+          "count",
+          "pagination"
+        ]
+      },
+      "ScanPointList": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScanPoint"
+            }
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        },
+        "required": [
+          "data",
+          "count",
+          "pagination"
+        ]
+      },
+      "UserList": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/User"
+            }
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        },
+        "required": [
+          "data",
+          "count",
+          "pagination"
+        ]
+      },
+      "TransactionList": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Transaction"
+            }
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        },
+        "required": [
+          "data",
+          "count",
+          "pagination"
+        ]
+      },
+      "TrendList": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Trend"
+            }
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        },
+        "required": [
+          "data",
+          "count",
+          "pagination"
+        ]
+      },
+      "TopProductList": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TopProduct"
+            }
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        },
+        "required": [
+          "data",
+          "count",
+          "pagination"
+        ]
+      },
+      "MovementResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Movement"
+          },
+          "meta": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "result_status": {
+                "type": "string",
+                "enum": [
+                  "CREATED",
+                  "DUPLICATE"
+                ]
+              }
+            },
+            "required": [
+              "result_status"
+            ]
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ]
+      }
+    }
+  }
+}
