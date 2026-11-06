@@ -1,3 +1,4 @@
+// LEGACY REFERENCE ONLY: retired API contract; do not treat as the new backend specification.
 // Browser-side integration example, not a frontend application.
 // Keep the same-origin /api proxy. Never store session cookies/passwords/hashes.
 export type DecimalString = string;

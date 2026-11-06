@@ -6,7 +6,7 @@ import { errorMessage } from '../lib/format';
 import { ApiError } from '../lib/api';
 import { LoadingScreen } from '../components/Common';
 import { WarehouseIllustration } from '../components/WarehouseIllustration';
-import { isCloud } from '../auth/profile';
+const isCloud=false;
 
 export function LoginPage() {
   const auth = useAuth(), location = useLocation();

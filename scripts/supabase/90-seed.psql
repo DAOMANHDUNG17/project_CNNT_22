@@ -1,6 +1,0 @@
-\set ON_ERROR_STOP on
-\ir review-gate.psql
--- Intentionally no INSERT or Auth account creation.
--- Seed only synthetic staging data after separate approval. No default ADMIN/password.
--- Provisioning must reconcile immutable Auth UUID -> bigint mapping before READY.
--- Production inventory/history import requires a separately reviewed data migration.

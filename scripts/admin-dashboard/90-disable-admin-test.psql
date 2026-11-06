@@ -1,7 +1,0 @@
-\set ON_ERROR_STOP on
-BEGIN;
-\ir ../phase3/guard-test.psql
-REVOKE EXECUTE ON FUNCTION public.admin_dashboard_write(bigint,text,jsonb) FROM PUBLIC,warehouse_backend,warehouse_readonly;
-COMMIT;
--- Preserve catalog/users/history/auth_version and restrictive function ownership.
--- Existing in-flight operations may finish; drain requests before containment.

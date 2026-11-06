@@ -1,44 +1,17 @@
 {
-  "name": "smart-stationery-warehouse-backend",
-  "version": "1.0.0",
+  "name": "smart-stationery-warehouse",
+  "version": "2.0.0",
   "private": true,
-  "description": "Authenticated warehouse REST API for React admin dashboard",
-  "type": "module",
+  "description": "Standalone frontend workspace for Smart Stationery Warehouse",
+  "workspaces": ["frontend"],
   "engines": {
     "node": ">=24.7"
   },
   "scripts": {
-    "postinstall": "node scripts/install-frontend.js",
-    "dev:cloud": "node scripts/dev-cloud.js",
-    "start:cloud": "node src/cloud/server.js",
-    "check:cloud": "node scripts/supabase/preflight.js",
-    "check:cloud-config": "node scripts/check-cloud-config.js",
-    "check:cloud-admin-config": "node scripts/supabase/inspect-schema.js",
-    "docs:cloud": "node scripts/generate-cloud-openapi.js",
-    "test:cloud-unit": "node --test test/cloud-*.test.js",
-    "start": "node src/server.js",
-    "dev": "node scripts/dev.js",
-    "dev:backend": "node --watch src/server.js",
-    "dev:frontend": "npm --prefix frontend run dev",
-    "check:db": "node scripts/check-db.js",
-    "check:phase2": "node scripts/check-phase2-access.js",
-    "check:main": "node scripts/check-backend-main.js",
-    "test": "node --test test/*.test.js",
-    "test:legacy-unit": "node --test test/api.test.js test/read-api.test.js",
-    "test:backend-unit": "node --test test/admin-write.test.js test/auth.test.js test/config.test.js test/contract.test.js test/dashboard-read.test.js test/secure-access.test.js test/stock-write.test.js",
-    "test:integration": "node --test --test-concurrency=1 integration/*-real.test.js integration/admin-sql-security.test.js",
-    "test:legacy-integration": "node scripts/check-phase2-access.js && node --test --test-concurrency=1 integration/database.test.js integration/read-api.test.js",
-    "test:secure-integration": "npm run test:integration",
-    "test:all": "npm test && npm run test:integration",
-    "setup:test-infra": "node scripts/admin-dashboard/setup-infra.js",
-    "setup:test-db": "node scripts/admin-dashboard/bootstrap-test.js"
-  },
-  "dependencies": {
-    "@supabase/supabase-js": "^2.119.0",
-    "express": "^5.3.0",
-    "jose": "^6.2.15",
-    "pg": "^8.23.1",
-    "postgres": "^4.0.0",
-    "redis": "6.3.1"
+    "dev": "npm --prefix frontend run dev",
+    "typecheck": "npm --prefix frontend run typecheck",
+    "build": "npm --prefix frontend run build",
+    "test": "npm --prefix frontend run test",
+    "test:e2e": "npm --prefix frontend run test:e2e"
   }
 }
