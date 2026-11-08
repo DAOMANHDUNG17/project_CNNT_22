@@ -1,4 +1,5 @@
 import { mockApi } from './mock-api';
+export { listDatabaseProducts } from './products-api';
 export * from './api-types';
 
 // Stable API abstraction backed by development-only Mock Mode for now.

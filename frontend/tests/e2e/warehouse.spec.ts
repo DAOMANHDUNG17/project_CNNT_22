@@ -1,20 +1,37 @@
-import {test,expect} from '@playwright/test';
+import { test, expect } from '@playwright/test';
 
-async function login(page:import('@playwright/test').Page){await page.goto('/login');await page.getByLabel('Tên đăng nhập',{exact:true}).fill('admin');await page.getByLabel('Mật khẩu',{exact:true}).fill('demo');await page.getByRole('button',{name:'Đăng nhập',exact:true}).click();await expect(page.getByRole('heading',{name:/Chào /})).toBeVisible();}
-
-test('all application routes work in Mock Mode without backend',async({page})=>{
- await login(page);
- const routes:[string,RegExp|string][]=[
-  ['/',/Chào /],['/products','Sản phẩm'],['/inventory','Tồn kho'],['/transactions','Giao dịch'],
-  ['/scan-points','Điểm quét'],['/stock-movement','Nhập / Xuất kho'],['/users','Người dùng']
- ];
- for(const[path,title]of routes){await page.goto(path);await expect(page.getByRole('heading',{name:title})).toBeVisible();await expect(page.locator('.ant-result-error')).toHaveCount(0);}
+test('unauthenticated visitors cannot load Products', async ({ page }) => {
+  let productsRequests = 0;
+  page.on('request', request => {
+    if (request.url().endsWith('/api/products')) productsRequests++;
+  });
+  await page.goto('/products');
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByLabel('Email', { exact: true })).toBeVisible();
+  expect(productsRequests).toBe(0);
 });
 
-test('mock data and mutations are available',async({page})=>{
- await login(page);await page.goto('/products');
- await expect(page.getByRole('row').filter({hasText:'BUT-BI-01'})).toBeVisible();
- await page.getByRole('button',{name:'Thêm sản phẩm',exact:true}).click();const dialog=page.getByRole('dialog');
- await dialog.getByLabel('Mã sản phẩm',{exact:true}).fill('MOCK-01');await dialog.getByLabel('Tên sản phẩm',{exact:true}).fill('Sản phẩm mock');await dialog.getByLabel('Đơn vị cơ sở',{exact:true}).fill('cái');await dialog.getByRole('button',{name:'Lưu sản phẩm',exact:true}).click();
- await page.getByRole('textbox',{name:'Tìm sản phẩm'}).fill('MOCK-01');await expect(page.getByRole('row').filter({hasText:'MOCK-01'})).toBeVisible();
+test('Supabase login loads real products and persists across refresh', async ({ page }) => {
+  const email = process.env.E2E_SUPABASE_EMAIL;
+  const password = process.env.E2E_SUPABASE_PASSWORD;
+  test.skip(!email || !password, 'Set E2E_SUPABASE_EMAIL and E2E_SUPABASE_PASSWORD locally to run live login test');
+
+  await page.goto('/login');
+  await page.getByLabel('Email', { exact: true }).fill(email!);
+  await page.getByLabel('Mật khẩu', { exact: true }).fill(password!);
+  await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
+  await expect(page).not.toHaveURL(/\/login$/);
+  const responsePromise = page.waitForResponse(response => response.url().endsWith('/api/products'));
+  await page.goto('/products');
+
+  const response = await responsePromise;
+  expect(response.request().headers().authorization).toMatch(/^Bearer [^\s]+$/);
+  expect(response.status()).toBe(200);
+  const payload = await response.json() as { count: number; data: Array<{ product_id: string }> };
+  expect(payload.count).toBe(12);
+  expect(payload.data).toHaveLength(12);
+  await expect(page.getByRole('row').filter({ hasText: payload.data[0]!.product_id })).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByRole('row').filter({ hasText: payload.data[0]!.product_id })).toBeVisible();
 });
