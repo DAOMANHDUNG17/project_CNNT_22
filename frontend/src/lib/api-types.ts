@@ -7,9 +7,11 @@ export interface User extends Identity{is_active:boolean;created_at:IsoTimestamp
 export interface Product{product_id:string;product_name:string;base_unit:string;is_active:boolean;created_at:IsoTimestamp}
 export interface DatabaseProduct extends Product{updated_at:IsoTimestamp}
 export interface ProductUnit{product_unit_id:BigintId;product_id:string;unit_name:string;conversion_factor:number;scan_code:string;is_base_unit:boolean}
+export interface DatabaseProductUnit extends ProductUnit{product_name:string;created_at:IsoTimestamp}
 export interface ProductDetail extends Product{units:ProductUnit[]}
 export interface Inventory{product_id:string;product_name:string;base_unit:string;is_active:boolean;quantity_base:DecimalString;updated_at:IsoTimestamp}
 export interface ScanPoint{scan_point_id:string;point_name:string;is_active:boolean}
+export interface DatabaseScanPoint extends ScanPoint{created_at:IsoTimestamp}
 export interface Movement{transaction_id:string;product_id:string;product_unit_id:BigintId;scan_point_id:string;movement_type:MovementType;quantity_packages:number;conversion_factor_snapshot:number;quantity_base:DecimalString;inventory_after:DecimalString;created_at:IsoTimestamp}
 export interface Transaction extends Movement{product_name:string;unit_name:string;point_name:string}
 export interface MovementRequest{transaction_id:string;scan_point_id:string;scan_code:string;movement_type:MovementType;quantity_packages:number}

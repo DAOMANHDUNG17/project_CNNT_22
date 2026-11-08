@@ -1,6 +1,9 @@
 import { mockApi } from './mock-api';
-export { listDatabaseProducts } from './products-api';
+export { createDatabaseProduct, listDatabaseProducts } from './products-api';
+export type { CreateProductRequest } from './products-api';
 export { listDatabaseInventory } from './inventory-api';
+export { listDatabaseScanPoints } from './scan-points-api';
+export { listDatabaseProductUnits } from './product-units-api';
 export * from './api-types';
 
 // Stable API abstraction backed by development-only Mock Mode for now.

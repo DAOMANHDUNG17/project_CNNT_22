@@ -1,8 +1,9 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOkResponse, ApiOperation } from '@nestjs/swagger';
+import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiBody, ApiCreatedResponse, ApiOkResponse, ApiOperation } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { CreateProductDto } from './create-product.dto';
 import { ProductsService } from './products.service';
 
 @Controller('products')
@@ -41,5 +42,34 @@ export class ProductsController {
   })
   findAll() {
     return this.productsService.findAll();
+  }
+
+  @Post()
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Declare a new product without stock movement' })
+  @ApiBody({ type: CreateProductDto })
+  @ApiCreatedResponse({
+    description: 'Product created; the database trigger initializes inventory to zero',
+    schema: {
+      type: 'object',
+      required: ['data'],
+      properties: {
+        data: {
+          type: 'object',
+          required: ['product_id', 'product_name', 'base_unit', 'is_active', 'created_at', 'updated_at'],
+          properties: {
+            product_id: { type: 'string' },
+            product_name: { type: 'string' },
+            base_unit: { type: 'string' },
+            is_active: { type: 'boolean' },
+            created_at: { type: 'string', format: 'date-time' },
+            updated_at: { type: 'string', format: 'date-time' },
+          },
+        },
+      },
+    },
+  })
+  create(@Body() dto: CreateProductDto) {
+    return this.productsService.create(dto);
   }
 }

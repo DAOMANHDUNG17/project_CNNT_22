@@ -1,8 +1,8 @@
 import { useCallback, useState } from 'react';
 import { Button, Card, Descriptions, Drawer, Input, Select, Space } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
-import { api, allPages } from '../lib/api';
-import type { ScanPoint, Transaction } from '../lib/api';
+import { api, listDatabaseScanPoints } from '../lib/api';
+import type { Transaction } from '../lib/api';
 import { useDebounced, useResource } from '../hooks/useResource';
 import { integer, timestamp } from '../lib/format';
 import { DataTable, ErrorNotice, IdText, MovementTag, PageHeading, RefreshButton } from '../components/Common';
@@ -13,14 +13,14 @@ export default function TransactionsPage() {
   const [movementType,setMovementType] = useState<'IN'|'OUT'>();
   const [scanPointId,setScanPointId] = useState<string>();
   const [selected,setSelected] = useState<string>();
-  const points = useResource(useCallback(signal=>allPages<ScanPoint>(page=>api.listScanPoints({page,limit:100},{signal}),signal),[]));
+  const points = useResource(useCallback(signal=>listDatabaseScanPoints({signal}),[]));
   const list = useResource(useCallback(signal=>api.listTransactions({...paging,...(productId?{productId}:{}),movementType,scanPointId},{signal}),[paging,productId,movementType,scanPointId]));
   const detail = useResource(useCallback(signal=>selected?api.getTransaction(selected,{signal}):Promise.resolve(null),[selected]));
   const resetPage = ()=>setPaging(p=>({...p,page:1}));
   return <div className="page-enter"><PageHeading title="Giao dịch" action={<RefreshButton onClick={list.reload} loading={list.loading}/>}/>
     <Card className="content-card"><div className="table-toolbar"><Input aria-label="Lọc mã sản phẩm" maxLength={20} prefix={<SearchOutlined/>} placeholder="Lọc theo mã sản phẩm chính xác…" allowClear value={product} onChange={e=>{setProduct(e.target.value);resetPage();}}/>
       <Space wrap><Select aria-label="Loại giao dịch" placeholder="Mọi loại giao dịch" allowClear value={movementType} style={{minWidth:170}} options={[{value:'IN',label:'Nhập kho'},{value:'OUT',label:'Xuất kho'}]} onChange={value=>{setMovementType(value);resetPage();}}/>
-        <Select aria-label="Lọc điểm quét" placeholder="Mọi điểm quét" value={scanPointId} loading={points.loading} allowClear style={{minWidth:200}} options={points.data?.map(p=>({value:p.scan_point_id,label:`${p.scan_point_id} · ${p.point_name}`}))} onChange={value=>{setScanPointId(value);resetPage();}}/></Space></div>
+        <Select aria-label="Lọc điểm quét" placeholder="Mọi điểm quét" value={scanPointId} loading={points.loading} allowClear style={{minWidth:200}} options={points.data?.data.map(p=>({value:p.scan_point_id,label:`${p.scan_point_id} · ${p.point_name}`}))} onChange={value=>{setScanPointId(value);resetPage();}}/></Space></div>
       <ErrorNotice error={points.error} retry={points.reload}/><ErrorNotice error={list.error} retry={list.reload}/><DataTable<Transaction> rowKey="transaction_id" page={list.data} loading={list.loading} onPage={(page,limit)=>setPaging({page,limit})} columns={[
         {title:'Thời gian (UTC+7)',dataIndex:'created_at',render:timestamp},
         {title:'Sản phẩm',dataIndex:'product_name',render:(value:string,row)=><div className="cell-product"><strong>{value}</strong><small>{row.product_id}</small></div>},
