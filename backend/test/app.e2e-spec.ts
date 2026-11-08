@@ -138,6 +138,48 @@ describe('API (e2e)', () => {
     expect(document.paths['/api/products']?.get?.responses?.['200']).toBeDefined();
   });
 
+  it('requires authentication for /api/inventory', async () => {
+    await request(app.getHttpServer()).get('/api/inventory').expect(401);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('returns inventory joined with products for an authenticated VIEWER', async () => {
+    const item = {
+      product_id: 'SP001',
+      product_name: 'Product 1',
+      base_unit: 'piece',
+      is_active: true,
+      quantity_base: '240',
+      updated_at: new Date('2026-01-02T00:00:00.000Z'),
+    };
+    query.mockImplementation((sql: string) =>
+      sql.includes('FROM public.users')
+        ? [{ ...businessUser, role: 'VIEWER' }]
+        : [item],
+    );
+
+    await request(app.getHttpServer())
+      .get('/api/inventory')
+      .set('Authorization', 'Bearer valid-token')
+      .expect(200)
+      .expect({
+        data: [{ ...item, updated_at: item.updated_at.toISOString() }],
+        count: 1,
+      });
+    expect(query).toHaveBeenNthCalledWith(2,
+      'SELECT i.product_id, p.product_name, p.base_unit, p.is_active, i.quantity_base, i.updated_at FROM public.inventory AS i JOIN public.products AS p ON p.product_id = i.product_id ORDER BY i.product_id',
+    );
+  });
+
+  it('documents bearer authorization for GET /api/inventory', () => {
+    const config = new DocumentBuilder().addBearerAuth().build();
+    const document = SwaggerModule.createDocument(app, config);
+    expect(document.paths['/api/inventory']?.get?.security).toEqual([
+      { bearer: [] },
+    ]);
+    expect(document.paths['/api/inventory']?.get?.responses?.['200']).toBeDefined();
+  });
+
   afterEach(async () => {
     await app.close();
   });
