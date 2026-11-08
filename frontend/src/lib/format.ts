@@ -38,6 +38,7 @@ const errors: Record<string, string> = {
   LAST_ADMIN_REQUIRED: 'Phải giữ lại ít nhất một quản trị viên đang hoạt động.',
   UNSAFE_UNIT_CHANGE: 'Không thể đổi đơn vị đang sử dụng. Hãy tạo đơn vị và mã quét mới.',
   RESOURCE_CONFLICT: 'Mã hoặc tên này đã tồn tại.',
+  PRODUCT_ID_CONFLICT: 'Mã sản phẩm đã tồn tại. Vui lòng chọn mã khác.',
   RESOURCE_NOT_FOUND: 'Không tìm thấy đối tượng này.',
   PRODUCT_NOT_FOUND: 'Không tìm thấy sản phẩm.',
   INVENTORY_NOT_FOUND: 'Sản phẩm chưa có bản ghi tồn kho.',

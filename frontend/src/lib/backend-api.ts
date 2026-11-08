@@ -19,3 +19,27 @@ export async function authorizedGet<T>(path: string, options: RequestOptions = {
   }
   return (await response.json()) as T;
 }
+
+export async function authorizedPost<T>(path: string, body: object): Promise<T> {
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw new ApiError(503, 'AUTH_UNAVAILABLE', 'Không thể đọc phiên đăng nhập.');
+  if (!data.session) throw new ApiError(401, 'AUTHENTICATION_REQUIRED', 'Vui lòng đăng nhập.');
+
+  const apiUrl = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api').replace(/\/$/, '');
+  const response = await fetch(`${apiUrl}${path}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${data.session.access_token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const code = response.status === 400 ? 'INVALID_BODY'
+      : response.status === 401 ? 'AUTHENTICATION_REQUIRED'
+        : response.status === 403 ? 'FORBIDDEN'
+          : response.status === 409 ? 'RESOURCE_CONFLICT' : 'REQUEST_FAILED';
+    throw new ApiError(response.status, code, 'Không thể lưu dữ liệu.');
+  }
+  return (await response.json()) as T;
+}
