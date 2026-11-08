@@ -5,6 +5,7 @@ export interface PaginationQuery{page?:number;limit?:number} export interface Re
 export interface Identity{user_id:BigintId;username:string;display_name:string;role:Role}
 export interface User extends Identity{is_active:boolean;created_at:IsoTimestamp}
 export interface Product{product_id:string;product_name:string;base_unit:string;is_active:boolean;created_at:IsoTimestamp}
+export interface DatabaseProduct extends Product{updated_at:IsoTimestamp}
 export interface ProductUnit{product_unit_id:BigintId;product_id:string;unit_name:string;conversion_factor:number;scan_code:string;is_base_unit:boolean}
 export interface ProductDetail extends Product{units:ProductUnit[]}
 export interface Inventory{product_id:string;product_name:string;base_unit:string;is_active:boolean;quantity_base:DecimalString;updated_at:IsoTimestamp}
