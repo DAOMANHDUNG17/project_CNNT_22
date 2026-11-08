@@ -2,7 +2,7 @@
 
 Hướng dẫn clone, cấu hình Supabase và chạy đồng thời backend/frontend nằm trong [README của repository](../README.md).
 
-Sau khi tạo `backend/.env` từ `.env.example` và điền `DATABASE_URL`, `SUPABASE_URL`, chạy trong thư mục này:
+Nhận file `.env` đã cấu hình từ admin và đặt vào chính thư mục `backend/` (cạnh `package.json`), rồi chạy:
 
 ```powershell
 npm install

@@ -5,10 +5,10 @@
 ## 1. Chuẩn bị
 
 - Cài Git và Node.js **24.7 trở lên** (kèm npm). Kiểm tra bằng `git --version`, `node --version`, `npm --version`.
-- Có quyền truy cập **cùng một Supabase project** với nhóm, một tài khoản Supabase Auth đã được liên kết với `public.users`, và các giá trị cấu hình bên dưới. Nhờ người quản lý project cấp quyền/cấu hình qua kênh riêng; repository không chứa mật khẩu hay key thật.
+- Liên hệ **admin của nhóm** để nhận hai file cấu hình `backend/.env`, `frontend/.env`. Gửi cho admin **địa chỉ email bạn muốn dùng để đăng nhập**; admin sẽ tạo tài khoản Supabase Auth, liên kết với `public.users` và cung cấp thông tin đăng nhập qua kênh riêng. Repository không chứa mật khẩu hay key thật.
 - PostgreSQL của project phải có sẵn schema và dữ liệu cần dùng. `npm install` chỉ cài package, không tạo database.
 
-Các lệnh dưới đây dành cho PowerShell trên Windows. Trên macOS/Linux, thay `Copy-Item` bằng `cp`. Nếu PowerShell chặn `npm.ps1`, dùng `npm.cmd` thay cho `npm`.
+Các lệnh dưới đây dành cho PowerShell trên Windows. Nếu PowerShell chặn `npm.ps1`, dùng `npm.cmd` thay cho `npm`.
 
 ## 2. Clone và cài package
 
@@ -27,14 +27,14 @@ Chạy `npm install` **trong từng thư mục**. Các script npm ở thư mục
 
 ## 3. Cấu hình môi trường
 
-Từ thư mục gốc vừa clone:
+Sau khi clone, **nhận hai file `.env` đã được admin cấu hình sẵn** và đặt đúng vị trí:
 
-```powershell
-Copy-Item backend\.env.example backend\.env
-Copy-Item frontend\.env.example frontend\.env
-```
+- File backend → `project_CNNT_22/backend/.env`.
+- File frontend → `project_CNNT_22/frontend/.env`.
 
-Điền `backend/.env`:
+Không đặt file ở thư mục gốc hoặc đổi tên thành `.env.txt`. Nếu chưa nhận được file, liên hệ admin trước khi chạy; `.env.example` chỉ là mẫu, không chứa thông tin kết nối thật.
+
+Để admin kiểm tra cấu hình, `backend/.env` cần các biến sau:
 
 | Biến | Cách điền |
 | --- | --- |
@@ -44,7 +44,7 @@ Copy-Item frontend\.env.example frontend\.env
 | `SUPABASE_URL` | Project URL dạng `https://<project-ref>.supabase.co`, lấy từ Supabase Project Settings. Backend dùng URL này để kiểm tra JWT qua JWKS. |
 | `SUPABASE_ANON_KEY` | Chưa cần cho backend hiện tại; có thể để trống. |
 
-Điền `frontend/.env`:
+`frontend/.env` cần các biến sau:
 
 | Biến | Cách điền |
 | --- | --- |
@@ -77,7 +77,7 @@ cd frontend
 npm run dev
 ```
 
-Mở http://127.0.0.1:5173/login và đăng nhập bằng **email/mật khẩu Supabase Auth được cấp**. Tài khoản cũng phải có bản ghi `public.users` đang hoạt động; quyền ADMIN/STAFF/VIEWER được lấy từ bản ghi đó. Sau khi đăng nhập, mở http://127.0.0.1:5173/products để kiểm tra dữ liệu thật.
+Mở http://127.0.0.1:5173/login và đăng nhập bằng **email bạn đã gửi cho admin** cùng mật khẩu được admin cung cấp. Tài khoản cũng phải có bản ghi `public.users` đang hoạt động; quyền ADMIN/STAFF/VIEWER được lấy từ bản ghi đó. Sau khi đăng nhập, mở http://127.0.0.1:5173/products để kiểm tra dữ liệu thật.
 
 Nếu vừa sửa `.env`, dừng tiến trình bằng `Ctrl+C` rồi chạy lại server tương ứng. Để chạy backend một lần không theo dõi file, dùng `npm run start`; để chạy bản build, dùng `npm run build` rồi `npm run start:prod` trong `backend/`.
 
