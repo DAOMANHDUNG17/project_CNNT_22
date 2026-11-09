@@ -7,6 +7,7 @@ import { InventoryModule } from './inventory/inventory.module';
 import { ProductsModule } from './products/products.module';
 import { ProductUnitsModule } from './product-units/product-units.module';
 import { ScanPointsModule } from './scan-points/scan-points.module';
+import { StockMovementsModule } from './stock-movements/stock-movements.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { ScanPointsModule } from './scan-points/scan-points.module';
     ProductsModule,
     ProductUnitsModule,
     ScanPointsModule,
+    StockMovementsModule,
   ],
 })
 export class AppModule {}

@@ -11,6 +11,6 @@ export default defineConfig({
   timeout: 60000,
   expect: { timeout: 12000 },
   reporter: 'list',
-  use: { baseURL:'http://localhost:5173',browserName:'chromium',channel:'msedge',headless:true,
+  use: { baseURL:process.env.E2E_BASE_URL ?? 'http://localhost:5173',browserName:'chromium',channel:'msedge',headless:true,
     viewport:{width:1440,height:1000},actionTimeout:12000, trace:'off',video:'off',screenshot:'off' },
 });

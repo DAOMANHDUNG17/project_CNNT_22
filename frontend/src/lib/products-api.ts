@@ -1,6 +1,6 @@
 import { ApiError } from './api-types';
 import type { Data, DatabaseProduct, RequestOptions } from './api-types';
-import { authorizedGet, authorizedPost } from './backend-api';
+import { authorizedGet, authorizedPatch, authorizedPost } from './backend-api';
 
 export interface ProductsResponse {
   data: DatabaseProduct[];
@@ -22,4 +22,10 @@ export async function createDatabaseProduct(body: CreateProductRequest): Promise
     }
     throw error;
   }
+}
+
+export type PatchProductRequest = Partial<Pick<DatabaseProduct, 'product_name' | 'is_active'>>;
+
+export function updateDatabaseProduct(id: string, body: PatchProductRequest): Promise<Data<DatabaseProduct>> {
+  return authorizedPatch<Data<DatabaseProduct>>(`/products/${encodeURIComponent(id)}`, body);
 }
