@@ -34,13 +34,27 @@ const errors: Record<string, string> = {
   INVALID_SCAN_POINT: 'Điểm quét không tồn tại hoặc đã ngừng hoạt động.',
   INVALID_SCAN_CODE: 'Mã quét không tồn tại. Kiểm tra đơn vị sản phẩm.',
   PRODUCT_INACTIVE: 'Sản phẩm đã ngừng hoạt động.',
+  PRODUCT_HAS_STOCK: 'Không thể ngừng hoạt động sản phẩm khi vẫn còn tồn kho.',
   STOCK_LIMIT_EXCEEDED: 'Số lượng vượt giới hạn tồn kho cho phép.',
   LAST_ADMIN_REQUIRED: 'Phải giữ lại ít nhất một quản trị viên đang hoạt động.',
   UNSAFE_UNIT_CHANGE: 'Không thể đổi đơn vị đang sử dụng. Hãy tạo đơn vị và mã quét mới.',
   RESOURCE_CONFLICT: 'Mã hoặc tên này đã tồn tại.',
   PRODUCT_ID_CONFLICT: 'Mã sản phẩm đã tồn tại. Vui lòng chọn mã khác.',
+  SCAN_CODE_CONFLICT: 'Mã quét đã tồn tại. Vui lòng nhập mã khác.',
+  UNIT_NAME_CONFLICT: 'Tên đơn vị đã tồn tại cho sản phẩm này.',
+  BASE_UNIT_CONFLICT: 'Sản phẩm đã có đơn vị cơ sở.',
+  BASE_UNIT_FACTOR_INVALID: 'Hệ số của đơn vị cơ sở phải bằng 1.',
+  BASE_UNIT_NAME_INVALID: 'Tên đơn vị cơ sở phải trùng với đơn vị cơ sở của sản phẩm.',
   RESOURCE_NOT_FOUND: 'Không tìm thấy đối tượng này.',
   PRODUCT_NOT_FOUND: 'Không tìm thấy sản phẩm.',
+  PRODUCT_UNIT_NOT_FOUND: 'Không tìm thấy đơn vị đóng gói.',
+  BASE_UNIT_FACTOR_CHANGE_FORBIDDEN: 'Không thể thay đổi hệ số quy đổi của đơn vị cơ sở.',
+  BASE_UNIT_DATA_MISMATCH: 'Tên đơn vị cơ sở hiện không khớp với sản phẩm. Cần kiểm tra dữ liệu trước khi chỉnh sửa.',
+  BASE_UNIT_SYNC_REQUIRED: 'Tên đơn vị cơ sở chưa thống nhất. Vui lòng nhập tên đơn vị để đồng bộ.',
+  BACKEND_UNIT_ROUTE_MISSING: 'Backend chưa có route sửa đơn vị đóng gói. Hãy khởi động lại backend.',
+  UNIT_HAS_TRANSACTIONS: 'Không thể thay đổi hệ số quy đổi vì đơn vị này đã phát sinh giao dịch nhập/xuất.',
+  UNIT_PRODUCT_HAS_STOCK: 'Không thể thay đổi hệ số quy đổi khi sản phẩm vẫn còn tồn kho.',
+  BACKEND_ROUTE_MISSING: 'Backend chưa có route sửa sản phẩm. Hãy khởi động lại backend.',
   INVENTORY_NOT_FOUND: 'Sản phẩm chưa có bản ghi tồn kho.',
   TRANSACTION_NOT_FOUND: 'Không tìm thấy giao dịch.',
   SESSION_STORE_UNAVAILABLE: 'Dịch vụ phiên tạm thời không khả dụng. Vui lòng thử lại sau.',
@@ -50,6 +64,7 @@ const errors: Record<string, string> = {
 };
 export function errorMessage(error: unknown): string {
   if (error instanceof ApiError) {
+    if (error.code === 'STOCK_MOVEMENT_ERROR') return error.message;
     if (error.status === 429) return `Quá nhiều yêu cầu. Thử lại sau ${error.retryAfter ?? 900} giây.`;
     return errors[error.code] ?? (error.status === 503 ? 'Dịch vụ tạm thời không khả dụng. Vui lòng thử lại sau.' : 'Không thể hoàn tất yêu cầu. Vui lòng kiểm tra lại.');
   }

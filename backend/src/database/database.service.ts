@@ -19,6 +19,10 @@ export class DatabaseService implements OnModuleDestroy {
     return this.client.unsafe(text, parameters);
   }
 
+  transaction<T>(work: (query: (text: string, parameters?: (string | number | boolean | null)[]) => ReturnType<DatabaseService['query']>) => Promise<T>): Promise<T> {
+    return this.client.begin(async (sql) => work((text, parameters = []) => sql.unsafe(text, parameters)));
+  }
+
   async checkHealth(): Promise<void> {
     await this.query('SELECT 1');
   }

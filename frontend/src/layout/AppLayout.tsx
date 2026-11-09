@@ -18,7 +18,7 @@ export function AppLayout() {
     { key: '/products', icon: <AppstoreOutlined />, label: 'Sản phẩm & đơn vị' },
     { key: '/inventory', icon: <DatabaseOutlined />, label: 'Tồn kho' },
     { key: '/transactions', icon: <HistoryOutlined />, label: 'Lịch sử giao dịch' },
-    ...(user?.role !== 'VIEWER' ? [{ key: '/stock-movement', icon: <ScanOutlined />, label: 'Nhập / Xuất kho' }] : []),
+    ...(user?.role === 'ADMIN' || user?.role === 'STAFF' ? [{ key: '/stock-movement', icon: <ScanOutlined />, label: 'Nhập kho' }] : []),
     { key: '/scan-points', icon: <EnvironmentOutlined />, label: 'Điểm quét' },
     ...(user?.role === 'ADMIN' ? [{ key: '/users', icon: <TeamOutlined />, label: 'Người dùng' }] : []),
   ];
