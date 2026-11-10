@@ -58,7 +58,7 @@ test('scan preview needs explicit confirmation, then bearer POST refreshes real 
   await expect(page.getByText('Đã nhập kho', { exact: true })).toBeVisible();
   await expect(page.getByText('124', { exact: true }).first()).toBeVisible();
   expect(calls).toBe(1);
-  expect(db.inventoryReads()).toBeGreaterThanOrEqual(2);
+  await expect.poll(() => db.inventoryReads()).toBeGreaterThanOrEqual(2);
   await expect(page.getByRole('button', { name: 'Xác nhận nhập kho' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Lượt nhập tiếp theo' }).click();
   await page.getByRole('textbox', { name: 'Mã quét' }).fill('BOX-ABC');
