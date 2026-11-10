@@ -13,7 +13,8 @@ export async function authorizedGet<T>(path: string, options: RequestOptions = {
     signal: options.signal,
   });
   if (!response.ok) {
-    const code = response.status === 401 ? 'AUTHENTICATION_REQUIRED'
+    const code = response.status === 400 && path.startsWith('/transactions') ? 'INVALID_QUERY'
+      : response.status === 401 ? 'AUTHENTICATION_REQUIRED'
       : response.status === 403 ? 'FORBIDDEN' : 'REQUEST_FAILED';
     throw new ApiError(response.status, code, 'Không tải được dữ liệu từ backend.');
   }

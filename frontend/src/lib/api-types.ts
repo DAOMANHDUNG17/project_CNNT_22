@@ -14,6 +14,7 @@ export interface ScanPoint{scan_point_id:string;point_name:string;is_active:bool
 export interface DatabaseScanPoint extends ScanPoint{created_at:IsoTimestamp}
 export interface Movement{transaction_id:string;product_id:string;product_unit_id:BigintId;scan_point_id:string;movement_type:MovementType;quantity_packages:number;conversion_factor_snapshot:number;quantity_base:DecimalString;inventory_after:DecimalString;created_at:IsoTimestamp}
 export interface Transaction extends Movement{product_name:string;unit_name:string;point_name:string}
+export interface DatabaseTransaction extends Movement{product_name:string|null;unit_name:string|null;point_name:string|null;inventory_before:DecimalString;scan_code_snapshot:string;user_id:BigintId;display_name:string|null}
 export interface MovementRequest{transaction_id:string;scan_point_id:string;scan_code:string;movement_type:MovementType;quantity_packages:number}
 export interface MovementResponse extends Data<Movement>{meta:{result_status:'CREATED'|'DUPLICATE'}}
 export interface ProductCreate{product_id:string;product_name:string;base_unit:string;is_active?:boolean} export interface ProductPatch{product_name?:string;base_unit?:string}

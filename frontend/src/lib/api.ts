@@ -3,6 +3,7 @@ export { createDatabaseProduct, listDatabaseProducts, updateDatabaseProduct } fr
 export type { CreateProductRequest, PatchProductRequest } from './products-api';
 export { listDatabaseInventory } from './inventory-api';
 export { listDatabaseScanPoints } from './scan-points-api';
+export { listDatabaseTransactions } from './transactions-api';
 export { createDatabaseProductUnit, listDatabaseProductUnits, updateDatabaseProductUnit } from './product-units-api';
 export type { CreateProductUnitRequest, PatchProductUnitRequest } from './product-units-api';
 export * from './api-types';
