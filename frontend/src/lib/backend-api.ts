@@ -22,6 +22,10 @@ export async function authorizedGet<T>(path: string, options: RequestOptions = {
 }
 
 export async function authorizedPost<T>(path: string, body: object): Promise<T> {
+  return (await authorizedPostWithStatus<T>(path, body)).data;
+}
+
+export async function authorizedPostWithStatus<T>(path: string, body: object): Promise<{ status: number; data: T }> {
   const { data, error } = await supabase.auth.getSession();
   if (error) throw new ApiError(503, 'AUTH_UNAVAILABLE', 'Không thể đọc phiên đăng nhập.');
   if (!data.session) throw new ApiError(401, 'AUTHENTICATION_REQUIRED', 'Vui lòng đăng nhập.');
@@ -56,7 +60,7 @@ export async function authorizedPost<T>(path: string, body: object): Promise<T> 
     }
     throw new ApiError(response.status, unitCode ?? code, 'Không thể lưu dữ liệu.');
   }
-  return (await response.json()) as T;
+  return { status: response.status, data: (await response.json()) as T };
 }
 
 export async function authorizedPatch<T>(path: string, body: object): Promise<T> {

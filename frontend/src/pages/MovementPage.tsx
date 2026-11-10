@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, App, Button, Card, Descriptions, Input, Select, Space, Spin, Typography } from 'antd';
+import { Alert, App, Button, Card, Descriptions, Input, Select, Space, Spin, Tabs, Typography } from 'antd';
 import { useAuth } from '../auth/AuthProvider';
 import { ErrorNotice, ExactNumber, PageHeading, RefreshButton } from '../components/Common';
 import { useResource } from '../hooks/useResource';
@@ -12,8 +12,9 @@ import type { StockInRequest, StockInResult } from '../lib/stock-movements-api';
 import { loadPendingStockIn, savePendingStockIn } from '../lib/pendingStockIn';
 import { errorMessage } from '../lib/format';
 import { ApiError } from '../lib/api-types';
+import Kt2Panel from './Kt2Panel';
 
-export default function MovementPage() {
+function StockInPanel() {
   const { user } = useAuth();
   const { message } = App.useApp();
   const [scanCode, setScanCode] = useState('');
@@ -134,5 +135,18 @@ export default function MovementPage() {
         {completed && <Button type="primary" onClick={nextScan}>Lượt nhập tiếp theo</Button>}
       </Space>
     </Card>
+  </div>;
+}
+
+export default function MovementPage() {
+  const { user } = useAuth();
+  const [tab, setTab] = useState('in');
+  return <div className="page-enter">
+    <PageHeading title="Quản lý nhập/xuất kho" />
+    <Tabs activeKey={tab} onChange={setTab} items={[
+      { key: 'in', label: 'Nhập kho', forceRender: true, children: <StockInPanel /> },
+      { key: 'out', label: 'Xuất kho', children: <Card className="content-card"><Alert type="info" showIcon title="Chức năng xuất kho đang được phát triển." /></Card> },
+      ...(user?.role === 'ADMIN' ? [{ key: 'kt2', label: 'Kiểm tra KT2', forceRender: true, children: <Kt2Panel /> }] : []),
+    ]} />
   </div>;
 }
