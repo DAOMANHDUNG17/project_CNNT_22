@@ -31,6 +31,7 @@ async function setup(page: import('@playwright/test').Page, role: 'ADMIN' | 'STA
 test('scan preview needs explicit confirmation, then bearer POST refreshes real inventory', async ({ page }) => {
   const db = await setup(page);
   let calls = 0;
+  const transactionIds: string[] = [];
   await page.route('**/api/stock-movements', async route => {
     calls++;
     expect(route.request().method()).toBe('POST');
@@ -38,6 +39,7 @@ test('scan preview needs explicit confirmation, then bearer POST refreshes real 
     const body = route.request().postDataJSON();
     expect(body).toMatchObject({ scan_code: 'BOX-ABC', scan_point_id: 'SCAN-01', movement_type: 'IN' });
     expect(body.transaction_id).toMatch(/^[0-9a-f-]{36}$/);
+    transactionIds.push(body.transaction_id);
     expect(Object.keys(body).sort()).toEqual(['movement_type', 'scan_code', 'scan_point_id', 'transaction_id']);
     db.setInventory('124');
     await route.fulfill({ status: 201, json: { data: { ...body, product_id: 'SP013', product_name: 'Bút mực', unit_name: 'Hộp', quantity_base: '24', inventory_before: '100', inventory_after: '124' } } });
@@ -58,6 +60,12 @@ test('scan preview needs explicit confirmation, then bearer POST refreshes real 
   expect(calls).toBe(1);
   expect(db.inventoryReads()).toBeGreaterThanOrEqual(2);
   await expect(page.getByRole('button', { name: 'Xác nhận nhập kho' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Lượt nhập tiếp theo' }).click();
+  await page.getByRole('textbox', { name: 'Mã quét' }).fill('BOX-ABC');
+  await page.getByRole('button', { name: 'Xác nhận nhập kho' }).click();
+  await expect(page.getByText('Đã nhập kho', { exact: true })).toBeVisible();
+  expect(calls).toBe(2);
+  expect(transactionIds[1]).not.toBe(transactionIds[0]);
 });
 
 test('network failure preserves UUID and freezes inputs for an exact retry', async ({ page }) => {
@@ -66,7 +74,11 @@ test('network failure preserves UUID and freezes inputs for an exact retry', asy
   await page.route('**/api/stock-movements', async route => {
     const body = route.request().postDataJSON() as Record<string, string>;
     bodies.push(body);
-    if (bodies.length === 1) { await route.abort('failed'); return; }
+    if (bodies.length === 1) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      await route.abort('timedout');
+      return;
+    }
     await route.fulfill({ status: 200, json: { data: { ...body, product_id: 'SP013', product_name: 'Bút mực', unit_name: 'Hộp', quantity_base: '24', inventory_before: '100', inventory_after: '124' } } });
   });
   await page.goto('/stock-movement');
@@ -102,3 +114,25 @@ test('business conflict keeps the request and shows the backend message without 
   await expect(page.getByText('Đã nhập kho', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Thử lại lượt nhập' })).toBeVisible();
 });
+
+for (const errorCase of [
+  { status: 400, message: 'Dữ liệu chưa hợp lệ. Kiểm tra các trường trong biểu mẫu.' },
+  { status: 401, message: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.' },
+  { status: 403, message: 'Tài khoản không có quyền thực hiện thao tác này.' },
+  { status: 404, message: 'Không tìm thấy mã quét.' },
+]) {
+  test(`HTTP ${errorCase.status} is shown without fake success`, async ({ page }) => {
+    await setup(page, 'ADMIN');
+    await page.route('**/api/stock-movements', route => route.fulfill({
+      status: errorCase.status,
+      json: { message: errorCase.status === 404 ? errorCase.message : 'Rejected' },
+    }));
+    await page.goto('/stock-movement');
+    await page.locator('.ant-select').click();
+    await page.getByText('SCAN-01 — Cửa A').last().click();
+    await page.getByRole('textbox', { name: 'Mã quét' }).fill('BOX-ABC');
+    await page.getByRole('button', { name: 'Xác nhận nhập kho' }).click();
+    await expect(page.getByText(errorCase.message)).toBeVisible();
+    await expect(page.getByText('Đã nhập kho', { exact: true })).toHaveCount(0);
+  });
+}
