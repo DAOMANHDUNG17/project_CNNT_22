@@ -1,5 +1,5 @@
 import type { Data } from './api-types';
-import { authorizedPost } from './backend-api';
+import { authorizedPost, authorizedPostWithStatus } from './backend-api';
 
 export interface StockInRequest {
   transaction_id: string;
@@ -28,4 +28,8 @@ export interface StockInResult {
 
 export function createStockIn(body: StockInRequest): Promise<Data<StockInResult>> {
   return authorizedPost<Data<StockInResult>>('/stock-movements', body);
+}
+
+export function retryStockIn(body: StockInRequest): Promise<{ status: number; data: Data<StockInResult> }> {
+  return authorizedPostWithStatus<Data<StockInResult>>('/stock-movements', body);
 }
