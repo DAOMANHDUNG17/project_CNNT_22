@@ -10,3 +10,4 @@ import { ProductsService } from './products.service';
   providers: [ProductsService],
 })
 export class ProductsModule {}
+  
