@@ -17,6 +17,7 @@ export function originalRetryPayload(row: DatabaseTransaction): StockInRequest {
     scan_code: row.scan_code_snapshot,
     scan_point_id: row.scan_point_id,
     movement_type: 'IN',
+    ...(row.quantity_packages > 1 ? { quantity_packages: row.quantity_packages } : {}),
   };
 }
 

@@ -37,10 +37,10 @@ test('scan preview needs explicit confirmation, then bearer POST refreshes real 
     expect(route.request().method()).toBe('POST');
     expect(route.request().headers().authorization).toBe('Bearer local-e2e-access-token');
     const body = route.request().postDataJSON();
-    expect(body).toMatchObject({ scan_code: 'BOX-ABC', scan_point_id: 'SCAN-01', movement_type: 'IN' });
+    expect(body).toMatchObject({ scan_code: 'BOX-ABC', scan_point_id: 'SCAN-01', movement_type: 'IN', quantity_packages: 1 });
     expect(body.transaction_id).toMatch(/^[0-9a-f-]{36}$/);
     transactionIds.push(body.transaction_id);
-    expect(Object.keys(body).sort()).toEqual(['movement_type', 'scan_code', 'scan_point_id', 'transaction_id']);
+    expect(Object.keys(body).sort()).toEqual(['movement_type', 'quantity_packages', 'scan_code', 'scan_point_id', 'transaction_id']);
     db.setInventory('124');
     await route.fulfill({ status: 201, json: { data: { ...body, product_id: 'SP013', product_name: 'Bút mực', unit_name: 'Hộp', quantity_base: '24', inventory_before: '100', inventory_after: '124' } } });
   });
@@ -68,6 +68,28 @@ test('scan preview needs explicit confirmation, then bearer POST refreshes real 
   expect(transactionIds[1]).not.toBe(transactionIds[0]);
 });
 
+test('editable IN count previews and submits three packages using the database factor', async ({ page }) => {
+  await setup(page);
+  const bodies: Array<Record<string, unknown>> = [];
+  await page.route('**/api/stock-movements', route => {
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    bodies.push(body);
+    return route.fulfill({ status: 201, json: { data: { ...body, product_id: 'SP013', product_name: 'Bút mực', unit_name: 'Hộp', quantity_base: '72', inventory_before: '100', inventory_after: '172' } } });
+  });
+  await page.goto('/stock-movement');
+  await page.getByRole('combobox', { name: 'Điểm quét' }).click();
+  await page.getByText('SCAN-01 — Cửa A').last().click();
+  await page.getByRole('textbox', { name: 'Mã quét' }).fill('BOX-ABC');
+  await page.getByRole('spinbutton', { name: 'Số đơn vị đóng gói nhập' }).fill('3');
+  await expect(page.getByText('72 chiếc', { exact: true })).toBeVisible();
+  await expect(page.getByText('172 chiếc')).toBeVisible();
+  expect(bodies).toHaveLength(0);
+  await page.getByRole('button', { name: 'Xác nhận nhập kho' }).click();
+  await expect(page.getByText('Đã nhập kho', { exact: true })).toBeVisible();
+  expect(bodies).toHaveLength(1);
+  expect(bodies[0]).toMatchObject({ movement_type: 'IN', quantity_packages: 3 });
+});
+
 test('network failure preserves UUID and freezes inputs for an exact retry', async ({ page }) => {
   await setup(page);
   const bodies: Array<Record<string, string>> = [];
@@ -79,12 +101,13 @@ test('network failure preserves UUID and freezes inputs for an exact retry', asy
       await route.abort('timedout');
       return;
     }
-    await route.fulfill({ status: 200, json: { data: { ...body, product_id: 'SP013', product_name: 'Bút mực', unit_name: 'Hộp', quantity_base: '24', inventory_before: '100', inventory_after: '124' } } });
+    await route.fulfill({ status: 200, json: { data: { ...body, product_id: 'SP013', product_name: 'Bút mực', unit_name: 'Hộp', quantity_base: '72', inventory_before: '100', inventory_after: '172' } } });
   });
   await page.goto('/stock-movement');
   await page.locator('.ant-select').click();
   await page.getByText('SCAN-01 — Cửa A').last().click();
   await page.getByRole('textbox', { name: 'Mã quét' }).fill('BOX-ABC');
+  await page.getByRole('spinbutton', { name: 'Số đơn vị đóng gói nhập' }).fill('3');
   await page.getByRole('button', { name: 'Xác nhận nhập kho' }).click();
   await expect(page.getByText('Lượt nhập đang được giữ để thử lại')).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Mã quét' })).toBeDisabled();
@@ -94,6 +117,7 @@ test('network failure preserves UUID and freezes inputs for an exact retry', asy
   await expect(page.getByText('Đã nhập kho', { exact: true })).toBeVisible();
   expect(bodies).toHaveLength(2);
   expect(bodies[1]).toEqual(bodies[0]);
+  expect(bodies[0]?.quantity_packages).toBe(3);
 });
 
 test('VIEWER cannot access stock movement action', async ({ page }) => {

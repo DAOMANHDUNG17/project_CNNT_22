@@ -15,7 +15,7 @@ export interface StockMovement {
   scan_code_snapshot: string;
   scan_point_id: string;
   user_id: string;
-  movement_type: 'IN';
+  movement_type: 'IN' | 'OUT';
   quantity_packages: number;
   conversion_factor_snapshot: number;
   quantity_base: string;
@@ -74,18 +74,23 @@ export class StockMovementsService {
         if (points[0].is_active !== true) throw new ConflictException('Điểm quét đã ngừng hoạt động.');
         const users = await query('SELECT role, is_active FROM public.users WHERE user_id = $1 AND auth_user_id = $2 FOR SHARE', [String(actor.user_id), actor.auth_user_id]);
         if (!users[0] || users[0].is_active !== true || !['ADMIN', 'STAFF'].includes(users[0].role as string)) {
-          throw new ForbiddenException('Tài khoản không còn quyền nhập kho.');
+          throw new ForbiddenException('Tài khoản không còn quyền nhập/xuất kho.');
         }
 
         const before = BigInt(String(inventory[0].quantity_base));
-        const after = before + BigInt(factor);
-        if (before < 0n || after > maxBigint) throw new ConflictException('Số lượng tồn kho vượt giới hạn cho phép.');
+        const amount = BigInt(factor) * BigInt(dto.quantity_packages);
+        if (before < 0n || before > maxBigint) throw new ConflictException('Số lượng tồn kho vượt giới hạn cho phép.');
+        if (dto.movement_type === 'OUT' && before < amount) {
+          throw new ConflictException('Không đủ tồn kho để xuất.');
+        }
+        const after = dto.movement_type === 'IN' ? before + amount : before - amount;
+        if (after > maxBigint) throw new ConflictException('Số lượng tồn kho vượt giới hạn cho phép.');
 
         const updated = await query('UPDATE public.inventory SET quantity_base = $2 WHERE product_id = $1 RETURNING quantity_base', [productId, after.toString()]);
         if (String(updated[0]?.quantity_base) !== after.toString()) throw new Error('Inventory update returned an unexpected value');
         const inserted = await query(
-          'INSERT INTO public.stock_transactions (transaction_id, product_id, product_unit_id, scan_point_id, user_id, movement_type, quantity_packages, conversion_factor_snapshot, inventory_before, inventory_after, scan_code_snapshot) VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8, $9, $10) RETURNING transaction_id, product_id, product_unit_id, scan_point_id, user_id, movement_type, quantity_packages, conversion_factor_snapshot, quantity_base, inventory_before, inventory_after, scan_code_snapshot, created_at',
-          [dto.transaction_id, productId, String(unit.product_unit_id), dto.scan_point_id, String(actor.user_id), 'IN', factor, before.toString(), after.toString(), dto.scan_code],
+          'INSERT INTO public.stock_transactions (transaction_id, product_id, product_unit_id, scan_point_id, user_id, movement_type, quantity_packages, conversion_factor_snapshot, inventory_before, inventory_after, scan_code_snapshot) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING transaction_id, product_id, product_unit_id, scan_point_id, user_id, movement_type, quantity_packages, conversion_factor_snapshot, quantity_base, inventory_before, inventory_after, scan_code_snapshot, created_at',
+          [dto.transaction_id, productId, String(unit.product_unit_id), dto.scan_point_id, String(actor.user_id), dto.movement_type, dto.quantity_packages, factor, before.toString(), after.toString(), dto.scan_code],
         );
         if (!inserted[0]) throw new Error('Stock transaction insert returned no row');
         return { data: this.toMovement(inserted[0], products[0].product_name as string, unit.unit_name as string), replay: false };
@@ -101,7 +106,7 @@ export class StockMovementsService {
       if (['22003', '23514'].includes((error as { code?: string }).code ?? '')) {
         throw new ConflictException('Số lượng tồn kho hoặc dữ liệu giao dịch không hợp lệ.');
       }
-      throw new InternalServerErrorException('Không thể hoàn tất nhập kho.');
+      throw new InternalServerErrorException('Không thể hoàn tất nhập/xuất kho.');
     }
   }
 
@@ -114,15 +119,15 @@ export class StockMovementsService {
       const rows = await this.databaseService.query(this.historySql(), [id]);
       return rows[0];
     } catch {
-      throw new InternalServerErrorException('Không thể kiểm tra giao dịch nhập kho.');
+      throw new InternalServerErrorException('Không thể kiểm tra giao dịch kho.');
     }
   }
 
   private replay(row: Row, dto: CreateStockMovementDto, actor: BusinessUser): { data: StockMovement; replay: true } {
     if (row.scan_code_snapshot !== dto.scan_code || row.scan_point_id !== dto.scan_point_id ||
-      row.movement_type !== dto.movement_type || row.quantity_packages !== 1 ||
+      row.movement_type !== dto.movement_type || row.quantity_packages !== dto.quantity_packages ||
       String(row.user_id) !== String(actor.user_id)) {
-      throw new ConflictException('Mã giao dịch đã được dùng cho một lượt nhập khác.');
+      throw new ConflictException('Mã giao dịch đã được dùng cho một lượt nhập/xuất khác.');
     }
     return { data: this.toMovement(row, row.product_name as string, row.unit_name as string), replay: true };
   }
@@ -137,7 +142,7 @@ export class StockMovementsService {
       scan_code_snapshot: row.scan_code_snapshot as string,
       scan_point_id: row.scan_point_id as string,
       user_id: String(row.user_id),
-      movement_type: row.movement_type as 'IN',
+      movement_type: row.movement_type as 'IN' | 'OUT',
       quantity_packages: row.quantity_packages as number,
       conversion_factor_snapshot: row.conversion_factor_snapshot as number,
       quantity_base: String(row.quantity_base),

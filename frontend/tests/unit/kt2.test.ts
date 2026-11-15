@@ -18,6 +18,7 @@ describe('KT2 client evidence', () => {
     expect(transactionUuid.test('OLD-CODE')).toBe(false);
     const payload = originalRetryPayload(row);
     expect(payload).toEqual({ transaction_id: row.transaction_id, scan_code: 'OLD-CODE', scan_point_id: 'SCAN-01', movement_type: 'IN' });
+    expect(originalRetryPayload({ ...row, quantity_packages: 3 })).toEqual({ ...payload, quantity_packages: 3 });
     getSession.mockResolvedValue({ data: { session: { access_token: 'session-token' } }, error: null });
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { transaction_id: row.transaction_id } }), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);

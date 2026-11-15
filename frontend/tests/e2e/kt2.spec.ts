@@ -76,13 +76,28 @@ test('ADMIN uses saved snapshot and one bearer POST; unchanged GET evidence yiel
   expect(db.inventoryReads()).toBeGreaterThanOrEqual(2);
 });
 
-test('invalid and missing UUID never POST, and OUT placeholder has no action', async ({ page }) => {
+test('KT2 retries the original multi-package IN count without changing stock', async ({ page }) => {
+  const db = await setup(page);
+  db.setRow({ ...row, quantity_packages: 2, quantity_base: '48', inventory_before: '0', inventory_after: '48' });
+  let sent: Record<string, unknown> | undefined;
+  await page.route('**/api/stock-movements', route => {
+    sent = route.request().postDataJSON() as Record<string, unknown>;
+    return route.fulfill({ status: 200, json: { data: { transaction_id: id } } });
+  });
+  await findOriginal(page);
+  await page.getByRole('button', { name: 'Thực hiện kiểm thử KT2' }).click();
+  await page.getByRole('button', { name: 'Gửi lại giao dịch gốc' }).click();
+  await expect(page.getByText('KT2: PASS')).toBeVisible();
+  expect(sent).toMatchObject({ transaction_id: id, movement_type: 'IN', quantity_packages: 2 });
+});
+
+test('invalid and missing UUID never POST, and opening OUT does not auto POST', async ({ page }) => {
   const db = await setup(page);
   let posts = 0;
   page.on('request', request => { if (request.url().includes('/api/stock-movements')) posts++; });
   await page.goto('/stock-movement');
   await page.getByRole('tab', { name: 'Xuất kho' }).click();
-  await expect(page.getByText('Chức năng xuất kho đang được phát triển.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Xuất kho bằng mã quét' })).toBeVisible();
   await page.getByRole('tab', { name: 'Kiểm tra KT2' }).click();
   await page.getByRole('textbox', { name: 'UUID giao dịch KT2' }).fill('invalid');
   await expect(page.getByRole('button', { name: 'Tra cứu giao dịch' })).toBeDisabled();

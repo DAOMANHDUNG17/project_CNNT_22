@@ -33,7 +33,7 @@ export default function Application() {
       <Route path="products" element={<ProductsPage />} />
       <Route path="inventory" element={<InventoryPage />} />
       <Route path="transactions" element={<TransactionsPage />} />
-      <Route path="scan-points" element={<ScanPointsPage />} />
+      <Route element={<ProtectedRoute roles={['ADMIN']} />}><Route path="scan-points" element={<ScanPointsPage />} /></Route>
       <Route element={<ProtectedRoute roles={['ADMIN','STAFF']} />}><Route path="stock-movement" element={<MovementPage />} /></Route>
       <Route element={<ProtectedRoute roles={['ADMIN']} />}><Route path="users" element={<UsersPage />} /></Route>
       <Route path="403" element={<ForbiddenPage />} />

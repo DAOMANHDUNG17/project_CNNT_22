@@ -1,16 +1,14 @@
 import { useCallback, useState } from 'react';
-import { Button, Card, Space, Typography } from 'antd';
-import { EnvironmentOutlined, ScanOutlined } from '@ant-design/icons';
-import { Link } from 'react-router-dom';
+import { Button, Card, Descriptions, Modal } from 'antd';
+import { EnvironmentOutlined } from '@ant-design/icons';
 import { listDatabaseScanPoints } from '../lib/api';
 import type { DatabaseScanPoint, Page } from '../lib/api';
-import { useAuth } from '../auth/AuthProvider';
 import { useResource } from '../hooks/useResource';
 import { ActiveTag, DataTable, ErrorNotice, PageHeading, RefreshButton } from '../components/Common';
 
 export default function ScanPointsPage() {
-  const { user } = useAuth();
   const [paging, setPaging] = useState({ page: 1, limit: 20 });
+  const [selected, setSelected] = useState<DatabaseScanPoint | null>(null);
   const resource = useResource(useCallback(signal => listDatabaseScanPoints({ signal }), []));
   const total = resource.data?.count ?? 0;
   const page: Page<DatabaseScanPoint> | undefined = resource.data && {
@@ -20,8 +18,8 @@ export default function ScanPointsPage() {
   };
 
   return <div className="page-enter">
-    <PageHeading title="Điểm quét" action={<RefreshButton onClick={resource.reload} loading={resource.loading} />} />
-    <div className="station-banner"><span className="station-banner-icon"><EnvironmentOutlined /></span><div><h2>Mỗi trạm, một luồng công việc</h2><p>Các điểm ghi nhận đã sẵn sàng. Giao diện quét mã và nhập/xuất kho đang chờ An phát triển.</p></div><Tagline /></div>
+    <PageHeading title="Quản lý điểm quét" action={<RefreshButton onClick={resource.reload} loading={resource.loading} />} />
+    <div className="station-banner"><span className="station-banner-icon"><EnvironmentOutlined /></span><div><h2>Danh sách điểm quét</h2><p>Đây là các điểm quét trong database. Chưa có ánh xạ tin cậy giữa điểm quét và trạm đang sử dụng.</p></div><Tagline /></div>
     <Card className="content-card">
       <ErrorNotice error={resource.error} retry={resource.reload} />
       <DataTable<DatabaseScanPoint> rowKey="scan_point_id" page={page} loading={resource.loading}
@@ -29,14 +27,18 @@ export default function ScanPointsPage() {
           { title: 'Mã điểm quét', dataIndex: 'scan_point_id', render: (value: string) => <strong className="id-text">{value}</strong> },
           { title: 'Tên điểm quét', dataIndex: 'point_name' },
           { title: 'Trạng thái', dataIndex: 'is_active', render: (value: boolean) => <ActiveTag active={value} /> },
-          { title: 'Đường dẫn trạm', key: 'station', render: (_, row) =>
-            <Typography.Text copyable={{ text: `${window.location.origin}/stock-movement?station=${encodeURIComponent(row.scan_point_id)}` }}>Cấu hình {row.scan_point_id}</Typography.Text> },
           { title: 'Thao tác', key: 'actions', render: (_, row) =>
-            <Space>{user?.role !== 'VIEWER' && row.is_active &&
-              <Link to={`/stock-movement?station=${encodeURIComponent(row.scan_point_id)}`}><Button size="small" icon={<ScanOutlined aria-hidden />}>Trang module</Button></Link>}</Space> },
+            <Button size="small" onClick={() => setSelected(row)}>Xem chi tiết</Button> },
         ]} />
     </Card>
+    <Modal title="Chi tiết điểm quét" open={!!selected} onCancel={() => setSelected(null)} footer={null} destroyOnHidden>
+      {selected && <Descriptions bordered column={1} items={[
+        { key: 'id', label: 'Mã điểm quét', children: selected.scan_point_id },
+        { key: 'name', label: 'Tên điểm quét', children: selected.point_name },
+        { key: 'active', label: 'Trạng thái', children: <ActiveTag active={selected.is_active} /> },
+      ]} />}
+    </Modal>
   </div>;
 }
 
-function Tagline() { return <div className="station-banner-meta">TÀI KHOẢN CÓ QUYỀN<br /><strong>Thao tác được kiểm soát</strong></div>; }
+function Tagline() { return <div className="station-banner-meta">QUẢN TRỊ VIÊN<br /><strong>Danh sách từ backend</strong></div>; }

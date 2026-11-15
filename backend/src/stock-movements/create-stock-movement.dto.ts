@@ -1,6 +1,6 @@
 import { Transform } from 'class-transformer';
-import { Equals, IsNotEmpty, IsString, IsUUID, MaxLength } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsIn, IsInt, IsNotEmpty, IsString, IsUUID, Max, MaxLength, Min, ValidateIf } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 const trimString = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
@@ -24,7 +24,14 @@ export class CreateStockMovementDto {
   @MaxLength(20)
   scan_point_id!: string;
 
-  @ApiProperty({ enum: ['IN'], example: 'IN' })
-  @Equals('IN')
-  movement_type!: 'IN';
+  @ApiProperty({ enum: ['IN', 'OUT'], example: 'OUT' })
+  @IsIn(['IN', 'OUT'])
+  movement_type!: 'IN' | 'OUT';
+
+  @ApiPropertyOptional({ type: Number, minimum: 1, maximum: 2147483647, default: 1, description: 'Number of scanned packaging units; omitted legacy requests mean 1.' })
+  @ValidateIf((_, value: unknown) => value !== undefined)
+  @IsInt()
+  @Min(1)
+  @Max(2147483647)
+  quantity_packages = 1;
 }

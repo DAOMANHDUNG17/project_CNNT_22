@@ -9,6 +9,7 @@ import { ProductUnitsModule } from './product-units/product-units.module';
 import { ScanPointsModule } from './scan-points/scan-points.module';
 import { StockMovementsModule } from './stock-movements/stock-movements.module';
 import { TransactionsModule } from './transactions/transactions.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { TransactionsModule } from './transactions/transactions.module';
     ScanPointsModule,
     StockMovementsModule,
     TransactionsModule,
+    DashboardModule,
   ],
 })
 export class AppModule {}

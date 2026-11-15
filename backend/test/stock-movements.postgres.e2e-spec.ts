@@ -168,7 +168,7 @@ describePostgres('POST /api/stock-movements with isolated PostgreSQL', () => {
     const invalidBodies = [
       {}, { ...basePayload, transaction_id: undefined }, { ...basePayload, transaction_id: 'bad' },
       { ...basePayload, scan_code: undefined }, { ...basePayload, scan_code: '' }, { ...basePayload, scan_code: '   ' },
-      { ...basePayload, scan_point_id: undefined }, { ...basePayload, movement_type: 'OUT' },
+      { ...basePayload, scan_point_id: undefined },
       { ...basePayload, movement_type: 'MOVE' }, { ...basePayload, quantity_base: '24' },
       { ...basePayload, user_id: '1' }, { ...basePayload, conversion_factor: 24 },
       { ...basePayload, inventory_after: '124' }, { ...basePayload, unknown: true },
@@ -202,6 +202,121 @@ describePostgres('POST /api/stock-movements with isolated PostgreSQL', () => {
     expect(String(state.count)).toBe('1');
     const [inventory] = await sql.unsafe("SELECT quantity_base FROM inventory WHERE product_id='P1'");
     expect(String(inventory.quantity_base)).toBe('999');
+  });
+
+  it('commits OUT for factor 1 and 24 with exact snapshots and one package', async () => {
+    const one = await post({ ...basePayload, transaction_id: uuid('201'), movement_type: 'OUT', scan_code: 'ODD-BASE-X' }).expect(201);
+    expect(one.body.data).toMatchObject({ movement_type: 'OUT', quantity_packages: 1, product_unit_id: '1', conversion_factor_snapshot: 1, quantity_base: '1', inventory_before: '100', inventory_after: '99' });
+    const box = await post({ ...basePayload, transaction_id: uuid('202'), movement_type: 'OUT' }, 'staff-token').expect(201);
+    expect(box.body.data).toMatchObject({ movement_type: 'OUT', product_id: 'P1', product_unit_id: '2', user_id: '2', conversion_factor_snapshot: 24, quantity_base: '24', inventory_before: '99', inventory_after: '75', scan_code_snapshot: 'BOX-NONNUMERIC' });
+    const [state] = await sql.unsafe("SELECT (SELECT quantity_base FROM inventory WHERE product_id='P1') quantity, (SELECT count(*) FROM stock_transactions WHERE movement_type='OUT') count");
+    expect(String(state.quantity)).toBe('75'); expect(String(state.count)).toBe('2');
+    const history = await request(app.getHttpServer()).get('/api/transactions?movementType=OUT').set('Authorization', 'Bearer staff-token').expect(200);
+    expect(history.body.data).toHaveLength(2);
+    expect(history.body.data.every((row: { movement_type: string }) => row.movement_type === 'OUT')).toBe(true);
+  });
+
+  it('computes editable IN/OUT package counts in PostgreSQL and freezes count for UUID retry', async () => {
+    const incoming = { ...basePayload, transaction_id: uuid('215'), quantity_packages: 3 };
+    const added = await post(incoming).expect(201);
+    expect(added.body.data).toMatchObject({ quantity_packages: 3, conversion_factor_snapshot: 24, quantity_base: '72', inventory_before: '100', inventory_after: '172' });
+    await post(incoming).expect(200);
+    await post({ ...incoming, quantity_packages: 2 }).expect(409);
+    const outgoing = { ...basePayload, transaction_id: uuid('216'), movement_type: 'OUT', quantity_packages: 2 };
+    const removed = await post(outgoing).expect(201);
+    expect(removed.body.data).toMatchObject({ quantity_packages: 2, conversion_factor_snapshot: 24, quantity_base: '48', inventory_before: '172', inventory_after: '124' });
+    await post(outgoing).expect(200);
+    await post({ ...outgoing, quantity_packages: 3 }).expect(409);
+    const [state] = await sql.unsafe("SELECT (SELECT quantity_base FROM inventory WHERE product_id='P1') quantity, (SELECT count(*) FROM stock_transactions) count");
+    expect(String(state.quantity)).toBe('124'); expect(String(state.count)).toBe('2');
+  });
+
+  it('rejects invalid package counts, multi-package shortages and overflow without writes', async () => {
+    for (const quantity_packages of [0, -1, 1.5, '2', null, 2147483648]) {
+      await post({ ...basePayload, transaction_id: uuid('217'), quantity_packages }).expect(400);
+    }
+    await sql.unsafe("UPDATE inventory SET quantity_base=48 WHERE product_id='P1'");
+    const shortage = await post({ ...basePayload, transaction_id: uuid('218'), movement_type: 'OUT', quantity_packages: 3 }).expect(409);
+    expect(shortage.body.message).toBe('Không đủ tồn kho để xuất.');
+    await post({ ...basePayload, transaction_id: uuid('219'), scan_code: 'OVERFLOW-X', quantity_packages: 2 }).expect(409);
+    const [state] = await sql.unsafe("SELECT (SELECT quantity_base FROM inventory WHERE product_id='P1') quantity, (SELECT count(*) FROM stock_transactions) count");
+    expect(String(state.quantity)).toBe('48'); expect(String(state.count)).toBe('0');
+  });
+
+  it('allows exact depletion, replays OUT at zero and rejects fresh OUT without writes', async () => {
+    await sql.unsafe("UPDATE inventory SET quantity_base=24 WHERE product_id='P1'");
+    const out = { ...basePayload, transaction_id: uuid('203'), movement_type: 'OUT' };
+    await post(out).expect(201);
+    const replay = await post(out).expect(200);
+    expect(replay.body.data).toMatchObject({ inventory_before: '24', inventory_after: '0' });
+    const insufficient = await post({ ...out, transaction_id: uuid('204') }).expect(409);
+    expect(insufficient.body.message).toBe('Không đủ tồn kho để xuất.');
+    const [state] = await sql.unsafe("SELECT (SELECT quantity_base FROM inventory WHERE product_id='P1') quantity, (SELECT count(*) FROM stock_transactions) count");
+    expect(String(state.quantity)).toBe('0'); expect(String(state.count)).toBe('1');
+    await sql.unsafe("UPDATE inventory SET quantity_base=23 WHERE product_id='P1'");
+    await post({ ...out, transaction_id: uuid('205') }).expect(409);
+    const [count] = await sql.unsafe('SELECT count(*) count FROM stock_transactions');
+    expect(String(count.count)).toBe('1');
+  });
+
+  it('rejects OUT UUID reuse with changed type, code, point or actor', async () => {
+    const out = { ...basePayload, transaction_id: uuid('206'), movement_type: 'OUT' };
+    await post(out).expect(201);
+    for (const changed of [{ movement_type: 'IN' }, { scan_code: 'ODD-BASE-X' }, { scan_point_id: 'SCAN-02' }]) {
+      await post({ ...out, ...changed }).expect(409);
+    }
+    await post(out, 'staff-token').expect(409);
+    const [state] = await sql.unsafe("SELECT (SELECT quantity_base FROM inventory WHERE product_id='P1') quantity, (SELECT count(*) FROM stock_transactions) count");
+    expect(String(state.quantity)).toBe('76'); expect(String(state.count)).toBe('1');
+  });
+
+  it('serializes simultaneous OUT requests without duplicate or lost updates', async () => {
+    const same = { ...basePayload, transaction_id: uuid('207'), movement_type: 'OUT' };
+    const repeated = await Promise.all([post(same), post(same)]);
+    expect(repeated.map(row => row.status).sort((a, b) => a - b)).toEqual([200, 201]);
+    let [state] = await sql.unsafe("SELECT (SELECT quantity_base FROM inventory WHERE product_id='P1') quantity, (SELECT count(*) FROM stock_transactions) count");
+    expect(String(state.quantity)).toBe('76'); expect(String(state.count)).toBe('1');
+
+    await sql.unsafe('TRUNCATE stock_transactions');
+    await sql.unsafe("UPDATE inventory SET quantity_base=24 WHERE product_id='P1'");
+    const scarce = await Promise.all([post({ ...same, transaction_id: uuid('208') }), post({ ...same, transaction_id: uuid('209') })]);
+    expect(scarce.map(row => row.status).sort((a, b) => a - b)).toEqual([201, 409]);
+    [state] = await sql.unsafe("SELECT (SELECT quantity_base FROM inventory WHERE product_id='P1') quantity, (SELECT count(*) FROM stock_transactions) count");
+    expect(String(state.quantity)).toBe('0'); expect(String(state.count)).toBe('1');
+
+    await sql.unsafe('TRUNCATE stock_transactions');
+    await sql.unsafe("UPDATE inventory SET quantity_base=48 WHERE product_id='P1'");
+    const enough = await Promise.all([post({ ...same, transaction_id: uuid('210') }), post({ ...same, transaction_id: uuid('211') })]);
+    expect(enough.map(row => row.status).sort((a, b) => a - b)).toEqual([201, 201]);
+    [state] = await sql.unsafe("SELECT (SELECT quantity_base FROM inventory WHERE product_id='P1') quantity, (SELECT count(*) FROM stock_transactions) count");
+    expect(String(state.quantity)).toBe('0'); expect(String(state.count)).toBe('2');
+  });
+
+  it('rolls back OUT on update/insert failures and rejects invalid references and roles', async () => {
+    const out = { ...basePayload, transaction_id: uuid('212'), movement_type: 'OUT' };
+    await post({ ...out, transaction_id: uuid('9999') }).expect(500);
+    await sql.unsafe('ALTER TABLE inventory DISABLE TRIGGER qa_fail_inventory');
+    await sql.unsafe("UPDATE inventory SET quantity_base=1 WHERE product_id='PFAIL'");
+    await sql.unsafe('ALTER TABLE inventory ENABLE TRIGGER qa_fail_inventory');
+    await post({ ...out, scan_code: 'FAIL-X' }).expect(500);
+    await post({ ...out, scan_code: 'UNKNOWN' }).expect(404);
+    await post({ ...out, scan_point_id: 'UNKNOWN' }).expect(404);
+    await post({ ...out, scan_point_id: 'SCAN-OFF' }).expect(409);
+    await post({ ...out, scan_code: 'INACTIVE-BOX' }).expect(409);
+    await post({ ...out, scan_code: 'MISSING-BOX' }).expect(409);
+    await post(out, 'viewer-token').expect(403);
+    await request(app.getHttpServer()).post('/api/stock-movements').send(out).expect(401);
+    const [state] = await sql.unsafe("SELECT (SELECT quantity_base FROM inventory WHERE product_id='P1') quantity, (SELECT quantity_base FROM inventory WHERE product_id='PFAIL') failed_quantity, (SELECT count(*) FROM stock_transactions) count");
+    expect(String(state.quantity)).toBe('100'); expect(String(state.failed_quantity)).toBe('1'); expect(String(state.count)).toBe('0');
+  });
+
+  it('preserves BIGINT precision and database OUT math constraints', async () => {
+    const out = await post({ ...basePayload, transaction_id: uuid('213'), movement_type: 'OUT', scan_code: 'OVERFLOW-X' }).expect(201);
+    expect(out.body.data).toMatchObject({ inventory_before: '9223372036854775807', inventory_after: '9223372036854775806', quantity_base: '1' });
+    const [row] = await sql.unsafe('SELECT quantity_base::text, inventory_before::text, inventory_after::text FROM stock_transactions WHERE transaction_id=$1', [uuid('213')]);
+    expect(row).toMatchObject({ quantity_base: '1', inventory_before: '9223372036854775807', inventory_after: '9223372036854775806' });
+    await expect(sql.unsafe(`INSERT INTO stock_transactions(transaction_id,product_id,product_unit_id,scan_point_id,user_id,movement_type,quantity_packages,conversion_factor_snapshot,inventory_before,inventory_after,scan_code_snapshot)
+      VALUES($1,'P1',2,'SCAN-01',1,'OUT',1,24,100,100,'BOX-NONNUMERIC')`, [uuid('214')])).rejects.toMatchObject({ code: '23514' });
   });
 
   it('serializes concurrent identical UUID and commits inventory only once', async () => {

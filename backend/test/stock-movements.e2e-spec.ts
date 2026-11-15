@@ -59,8 +59,8 @@ describe('POST /api/stock-movements (e2e with transactional database fake)', () 
         if (history.has(String(args[0]))) throw { code: '23505' };
         const row = {
           transaction_id: args[0], product_id: args[1], product_unit_id: args[2], scan_point_id: args[3],
-          user_id: args[4], movement_type: args[5], quantity_packages: 1, conversion_factor_snapshot: args[6],
-          inventory_before: args[7], inventory_after: args[8], scan_code_snapshot: args[9], quantity_base: String(args[6]),
+          user_id: args[4], movement_type: args[5], quantity_packages: args[6], conversion_factor_snapshot: args[7],
+          inventory_before: args[8], inventory_after: args[9], scan_code_snapshot: args[10], quantity_base: String(BigInt(String(args[6])) * BigInt(String(args[7]))),
           created_at: new Date('2026-01-01T00:00:00Z'),
         };
         history.set(String(args[0]), row);
@@ -91,6 +91,8 @@ describe('POST /api/stock-movements (e2e with transactional database fake)', () 
     const operation = document.paths['/api/stock-movements']?.post;
     expect(operation?.security).toEqual([{ bearer: [] }]);
     expect(operation?.requestBody).toBeDefined();
+    expect(document.components?.schemas?.CreateStockMovementDto).toMatchObject({ properties: { movement_type: { enum: ['IN', 'OUT'] } } });
+    expect(operation?.responses?.[201]?.content?.['application/json']?.schema?.properties?.data?.properties?.movement_type?.enum).toEqual(['IN', 'OUT']);
     for (const status of [200, 201, 400, 401, 403, 404, 409, 500]) {
       expect(operation?.responses?.[status]).toBeDefined();
     }
@@ -110,8 +112,11 @@ describe('POST /api/stock-movements (e2e with transactional database fake)', () 
 
   it.each([
     {}, { ...payload, transaction_id: 'bad' }, { ...payload, scan_code: ' ' },
-    { ...payload, scan_point_id: undefined }, { ...payload, movement_type: 'OUT' },
+    { ...payload, scan_point_id: undefined }, { ...payload, movement_type: 'MOVE' },
     { ...payload, user_id: '42' }, { ...payload, quantity_base: '24' },
+    { ...payload, quantity_packages: 0 }, { ...payload, quantity_packages: -1 },
+    { ...payload, quantity_packages: 1.5 }, { ...payload, quantity_packages: '2' },
+    { ...payload, quantity_packages: null }, { ...payload, quantity_packages: 2147483648 },
   ])('rejects invalid input without writing: %p', async body => {
     await post(app, body).expect(400);
     expect(stock).toBe('100'); expect(history.size).toBe(0);
@@ -130,6 +135,71 @@ describe('POST /api/stock-movements (e2e with transactional database fake)', () 
     expect(calls.findIndex(sql => sql.includes('FROM public.products') && sql.includes('FOR UPDATE'))).toBeLessThan(calls.findIndex(sql => sql.includes('FROM public.inventory') && sql.includes('FOR UPDATE')));
     expect(calls.findIndex(sql => sql.includes('FROM public.inventory') && sql.includes('FOR UPDATE'))).toBeLessThan(calls.findIndex(sql => sql.includes('FROM public.product_units') && sql.includes('FOR UPDATE')));
     expect(query.mock.calls.filter(([sql]) => String(sql).startsWith('UPDATE public.products') || String(sql).startsWith('UPDATE public.product_units'))).toHaveLength(0);
+  });
+
+  it('exports one database-defined package for factors 1 and 24, including exact depletion', async () => {
+    factor = 1;
+    const one = await post(app, { ...payload, movement_type: 'OUT' }).expect(201);
+    expect(one.body.data).toMatchObject({ movement_type: 'OUT', quantity_packages: 1, conversion_factor_snapshot: 1, quantity_base: '1', inventory_before: '100', inventory_after: '99' });
+    stock = '24'; factor = 24;
+    const two = await post(app, { ...payload, transaction_id: '550e8400-e29b-41d4-a716-446655440001', movement_type: 'OUT' }).expect(201);
+    expect(two.body.data).toMatchObject({ quantity_base: '24', inventory_before: '24', inventory_after: '0' });
+    expect(stock).toBe('0'); expect(history.size).toBe(2);
+  });
+
+  it('uses editable package counts for IN and OUT and binds count to UUID replay', async () => {
+    const incoming = { ...payload, quantity_packages: 3 };
+    const createdIn = await post(app, incoming).expect(201);
+    expect(createdIn.body.data).toMatchObject({ quantity_packages: 3, conversion_factor_snapshot: 24, quantity_base: '72', inventory_before: '100', inventory_after: '172' });
+    await post(app, incoming).expect(200);
+    await post(app, { ...incoming, quantity_packages: 2 }).expect(409);
+    const outgoing = { ...payload, transaction_id: '550e8400-e29b-41d4-a716-446655440001', movement_type: 'OUT', quantity_packages: 2 };
+    const createdOut = await post(app, outgoing).expect(201);
+    expect(createdOut.body.data).toMatchObject({ quantity_packages: 2, quantity_base: '48', inventory_before: '172', inventory_after: '124' });
+    await post(app, outgoing).expect(200);
+    await post(app, { ...outgoing, quantity_packages: 3 }).expect(409);
+    expect(stock).toBe('124'); expect(history.size).toBe(2);
+  });
+
+  it('rejects multi-package OUT when stock only covers fewer packages', async () => {
+    stock = '48';
+    const response = await post(app, { ...payload, movement_type: 'OUT', quantity_packages: 3 }).expect(409);
+    expect(response.body.message).toBe('Không đủ tồn kho để xuất.');
+    expect(stock).toBe('48'); expect(history.size).toBe(0);
+  });
+
+  it('rejects insufficient or zero stock without a write, but replays committed OUT at zero', async () => {
+    stock = '24';
+    const out = { ...payload, movement_type: 'OUT' };
+    await post(app, out).expect(201);
+    const count = history.size;
+    const replay = await post(app, out).expect(200);
+    expect(replay.body.data.inventory_after).toBe('0');
+    expect(history.size).toBe(count); expect(stock).toBe('0');
+    const insufficient = await post(app, { ...out, transaction_id: '550e8400-e29b-41d4-a716-446655440001' }).expect(409);
+    expect(insufficient.body.message).toBe('Không đủ tồn kho để xuất.');
+    expect(history.size).toBe(count); expect(stock).toBe('0');
+    stock = '23';
+    await post(app, { ...out, transaction_id: '550e8400-e29b-41d4-a716-446655440002' }).expect(409);
+    expect(history.size).toBe(count); expect(stock).toBe('23');
+  });
+
+  it('rejects OUT UUID reuse with changed type, code, point or actor', async () => {
+    const out = { ...payload, movement_type: 'OUT' };
+    await post(app, out).expect(201);
+    for (const changed of [{ movement_type: 'IN' }, { scan_code: 'OTHER' }, { scan_point_id: 'SCAN-02' }]) {
+      await post(app, { ...out, ...changed }).expect(409);
+    }
+    userId = '43'; await post(app, out).expect(409);
+    expect(stock).toBe('76'); expect(history.size).toBe(1);
+  });
+
+  it('rolls back OUT inventory when insert fails and leaves history empty when update fails', async () => {
+    insertFailure = true; await post(app, { ...payload, movement_type: 'OUT' }).expect(500);
+    expect(stock).toBe('100'); expect(history.size).toBe(0);
+    insertFailure = false; updateFailure = true;
+    await post(app, { ...payload, movement_type: 'OUT' }).expect(500);
+    expect(stock).toBe('100'); expect(history.size).toBe(0);
   });
 
   it('returns 200 from history on same UUID even after code rename/inactivation', async () => {
