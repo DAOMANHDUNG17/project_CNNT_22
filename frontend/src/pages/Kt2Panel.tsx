@@ -42,7 +42,8 @@ export default function Kt2Panel() {
   const validUuid = transactionUuid.test(normalized);
   const ownTransaction = !!row && row.user_id === user?.user_id;
   const complete = !!row && row.movement_type === 'IN' && !!row.scan_code_snapshot && !!row.scan_point_id
-    && row.quantity_packages === 1 && row.conversion_factor_snapshot >= 1;
+    && Number.isInteger(row.quantity_packages) && row.quantity_packages >= 1 && row.quantity_packages <= 2147483647
+    && row.conversion_factor_snapshot >= 1;
   const eligible = user?.role === 'ADMIN' && ownTransaction && complete && !!before && before.uuidCount === 1;
 
   function editUuid(value: string) {

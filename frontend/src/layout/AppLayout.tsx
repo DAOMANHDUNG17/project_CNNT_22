@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Avatar, Breadcrumb, Button, Drawer, Dropdown, Layout, Menu, Space } from 'antd';
+import { Avatar, Breadcrumb, Button, Drawer, Dropdown, Layout, Menu, Space, Tooltip } from 'antd';
 import { AppstoreOutlined, ArrowRightOutlined, HomeOutlined, DatabaseOutlined, DownOutlined,
   EnvironmentOutlined, HistoryOutlined, LogoutOutlined, MenuUnfoldOutlined,
   ScanOutlined, TeamOutlined } from '@ant-design/icons';
@@ -19,7 +19,7 @@ export function AppLayout() {
     { key: '/inventory', icon: <DatabaseOutlined />, label: 'Tồn kho' },
     { key: '/transactions', icon: <HistoryOutlined />, label: 'Lịch sử giao dịch' },
     ...(user?.role === 'ADMIN' || user?.role === 'STAFF' ? [{ key: '/stock-movement', icon: <ScanOutlined />, label: 'Quản lý nhập/xuất kho' }] : []),
-    { key: '/scan-points', icon: <EnvironmentOutlined />, label: 'Điểm quét' },
+    ...(user?.role === 'ADMIN' ? [{ key: '/scan-points', icon: <EnvironmentOutlined />, label: 'Quản lý điểm quét' }] : []),
     ...(user?.role === 'ADMIN' ? [{ key: '/users', icon: <TeamOutlined />, label: 'Người dùng' }] : []),
   ];
   const selected = menu.find(item => item.key === '/' ? location.pathname === '/' : location.pathname.startsWith(item.key));
@@ -41,8 +41,17 @@ export function AppLayout() {
         ]} />
       </div>
       <Space className="topbar-right" size={20}>
-        <Dropdown trigger={['click']} menu={{ items: [{ key: 'logout', label: 'Đăng xuất', icon: <LogoutOutlined />, disabled: mutation.busy }],
-          onClick: () => { void mutation.run(logout, 'Đã đăng xuất.', () => navigate('/login')); } }}>
+        <Tooltip title="Chưa có điểm quét được gán cho trạm này.">
+          <span className="station-status" role="status" aria-label="Điểm quét hiện tại: Chưa gán điểm quét">
+            <EnvironmentOutlined aria-hidden="true" />
+            <span className="station-status-copy"><small>Điểm quét</small><strong>Chưa gán điểm quét</strong></span>
+          </span>
+        </Tooltip>
+        <Dropdown trigger={['click']} menu={{ items: [
+          { key: 'identity', label: <span className="account-menu-identity"><strong>{user?.display_name}</strong><small>{user && roleLabels[user.role]}</small></span>, disabled: true },
+          { type: 'divider' },
+          { key: 'logout', label: 'Đăng xuất', icon: <LogoutOutlined />, disabled: mutation.busy },
+        ], onClick: ({ key }) => { if (key === 'logout') void mutation.run(logout, 'Đã đăng xuất.', () => navigate('/login')); } }}>
           <Button type="text" className="profile-button" aria-label="Menu tài khoản"><Avatar className="user-avatar">{user?.display_name.slice(0,1).toUpperCase()}</Avatar><span className="profile-copy"><strong>{user?.display_name}</strong><small>{user && roleLabels[user.role]}</small></span><DownOutlined /></Button>
         </Dropdown>
       </Space>

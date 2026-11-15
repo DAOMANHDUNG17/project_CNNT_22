@@ -6,6 +6,7 @@ export interface StockInRequest {
   scan_code: string;
   scan_point_id: string;
   movement_type: 'IN';
+  quantity_packages?: number;
 }
 
 export interface StockInResult {
@@ -26,8 +27,15 @@ export interface StockInResult {
   created_at: string;
 }
 
+export type StockOutRequest = Omit<StockInRequest, 'movement_type'> & { movement_type: 'OUT' };
+export type StockOutResult = Omit<StockInResult, 'movement_type'> & { movement_type: 'OUT' };
+
 export function createStockIn(body: StockInRequest): Promise<Data<StockInResult>> {
   return authorizedPost<Data<StockInResult>>('/stock-movements', body);
+}
+
+export function createStockOut(body: StockOutRequest): Promise<Data<StockOutResult>> {
+  return authorizedPost<Data<StockOutResult>>('/stock-movements', body);
 }
 
 export function retryStockIn(body: StockInRequest): Promise<{ status: number; data: Data<StockInResult> }> {

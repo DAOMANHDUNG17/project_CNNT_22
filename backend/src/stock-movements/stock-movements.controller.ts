@@ -14,8 +14,8 @@ const responseSchema = {
     properties: {
       transaction_id: { type: 'string', format: 'uuid' }, product_id: { type: 'string' }, product_name: { type: 'string' },
       product_unit_id: { type: 'string' }, unit_name: { type: 'string' }, scan_code_snapshot: { type: 'string' },
-      scan_point_id: { type: 'string' }, user_id: { type: 'string' }, movement_type: { type: 'string', enum: ['IN'] },
-      quantity_packages: { type: 'integer', example: 1 }, conversion_factor_snapshot: { type: 'integer', example: 24 },
+      scan_point_id: { type: 'string' }, user_id: { type: 'string' }, movement_type: { type: 'string', enum: ['IN', 'OUT'] },
+      quantity_packages: { type: 'integer', example: 2 }, conversion_factor_snapshot: { type: 'integer', example: 24 },
       quantity_base: { type: 'string', example: '24' }, inventory_before: { type: 'string', example: '100' },
       inventory_after: { type: 'string', example: '124' }, created_at: { type: 'string', format: 'date-time' },
     },
@@ -30,15 +30,15 @@ export class StockMovementsController {
 
   @Post()
   @Roles('ADMIN', 'STAFF')
-  @ApiOperation({ summary: 'Confirm one scanned package as an IN movement', description: 'A new UUID creates one atomic inventory increment and history row. Repeating the same UUID, code, point, type and actor returns the recorded result without incrementing stock.' })
+  @ApiOperation({ summary: 'Confirm a configurable number of packaging units as IN or OUT', description: 'Omitting quantity_packages keeps the legacy default of one. The backend reads the conversion factor by scan code. A new UUID atomically updates inventory and history; OUT checks stock under lock. Retry requires the same UUID, code, point, type, package count and actor.' })
   @ApiBody({ type: CreateStockMovementDto })
-  @ApiResponse({ status: 201, description: 'New IN movement committed', schema: responseSchema })
+  @ApiResponse({ status: 201, description: 'New IN or OUT movement committed', schema: responseSchema })
   @ApiResponse({ status: 200, description: 'Idempotent retry; no new movement', schema: responseSchema })
-  @ApiResponse({ status: 400, description: 'Invalid DTO or unsupported movement type' })
+  @ApiResponse({ status: 400, description: 'Invalid DTO' })
   @ApiResponse({ status: 401, description: 'Bearer token required' })
   @ApiResponse({ status: 403, description: 'VIEWER or inactive user' })
   @ApiResponse({ status: 404, description: 'Scan code or scan point not found' })
-  @ApiResponse({ status: 409, description: 'Inactive product/point, conflicting UUID, inconsistent inventory, or stock overflow' })
+  @ApiResponse({ status: 409, description: 'Insufficient stock, inactive product/point, conflicting UUID, inconsistent inventory, or stock overflow' })
   @ApiResponse({ status: 500, description: 'Unexpected database error without sensitive details' })
   async create(@Body() dto: CreateStockMovementDto, @Req() request: AuthenticatedRequest, @Res({ passthrough: true }) response: Response) {
     const result = await this.service.create(dto, request.user!);

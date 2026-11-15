@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createStockIn } from '../../src/lib/stock-movements-api';
+import { createStockIn, createStockOut } from '../../src/lib/stock-movements-api';
 import { parsePendingStockIn } from '../../src/lib/pendingStockIn';
+import { parsePendingStockOut } from '../../src/lib/pendingStockOut';
 
 const { getSession } = vi.hoisted(() => ({ getSession: vi.fn() }));
 vi.mock('../../src/lib/supabase', () => ({ supabase: { auth: { getSession } } }));
@@ -35,5 +36,43 @@ describe('stock IN client', () => {
     expect(parsePendingStockIn(JSON.stringify(pending))).toEqual(pending);
     expect(parsePendingStockIn(JSON.stringify({ ...pending, payload: { ...payload, quantity_base: '24' } }))).toBe(null);
     expect(parsePendingStockIn(JSON.stringify({ ...pending, payload: { ...payload, movement_type: 'OUT' } }))).toBe(null);
+    expect(parsePendingStockIn(JSON.stringify({ ...pending, payload: { ...payload, quantity_packages: 3 } }))?.payload.quantity_packages).toBe(3);
+    expect(parsePendingStockIn(JSON.stringify({ ...pending, payload: { ...payload, quantity_packages: 0 } }))).toBeNull();
+  });
+});
+
+describe('stock OUT client', () => {
+  const out = { ...payload, movement_type: 'OUT' as const };
+
+  it('sends only UUID, barcode, point and OUT under bearer JWT', async () => {
+    getSession.mockResolvedValue({ data: { session: { access_token: 'session-token' } }, error: null });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { transaction_id: out.transaction_id } }), { status: 201 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await createStockOut(out);
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringMatching(/\/stock-movements$/), {
+      method: 'POST', headers: { Authorization: 'Bearer session-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify(out),
+    });
+    expect(Object.keys(out).sort()).toEqual(['movement_type', 'scan_code', 'scan_point_id', 'transaction_id']);
+  });
+
+  it('preserves backend insufficient-stock details and requires a session', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ message: 'Không đủ tồn kho để xuất.' }), { status: 409 }));
+    vi.stubGlobal('fetch', fetchMock);
+    getSession.mockResolvedValueOnce({ data: { session: null }, error: null })
+      .mockResolvedValue({ data: { session: { access_token: 'session-token' } }, error: null });
+    await expect(createStockOut(out)).rejects.toMatchObject({ status: 401 });
+    expect(fetchMock).not.toHaveBeenCalled();
+    await expect(createStockOut(out)).rejects.toMatchObject({ status: 409, message: 'Không đủ tồn kho để xuất.' });
+  });
+
+  it('restores only an exact OUT payload and never accepts IN or client quantities', () => {
+    const pending = { payload: out, createdAt: '2026-11-15T00:00:00Z' };
+    expect(parsePendingStockOut(JSON.stringify(pending))).toEqual(pending);
+    expect(parsePendingStockOut(JSON.stringify({ ...pending, payload: { ...out, quantity_packages: 2 } }))?.payload.quantity_packages).toBe(2);
+    expect(parsePendingStockOut(JSON.stringify({ ...pending, payload: { ...out, quantity_packages: 1.5 } }))).toBeNull();
+    expect(parsePendingStockOut(JSON.stringify({ ...pending, payload: { ...out, quantity_base: '24' } }))).toBeNull();
+    expect(parsePendingStockOut(JSON.stringify({ ...pending, payload }))).toBeNull();
+    expect(parsePendingStockOut('not-json')).toBeNull();
   });
 });

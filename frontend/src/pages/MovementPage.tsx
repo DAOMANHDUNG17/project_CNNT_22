@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, App, Button, Card, Descriptions, Input, Select, Space, Spin, Tabs, Typography } from 'antd';
+import { Alert, App, Button, Card, Descriptions, Input, InputNumber, Select, Space, Spin, Tabs, Typography } from 'antd';
 import { useAuth } from '../auth/AuthProvider';
 import { ErrorNotice, ExactNumber, PageHeading, RefreshButton } from '../components/Common';
 import { useResource } from '../hooks/useResource';
@@ -13,12 +13,14 @@ import { loadPendingStockIn, savePendingStockIn } from '../lib/pendingStockIn';
 import { errorMessage } from '../lib/format';
 import { ApiError } from '../lib/api-types';
 import Kt2Panel from './Kt2Panel';
+import StockOutPanel from './StockOutPanel';
 
 function StockInPanel() {
   const { user } = useAuth();
   const { message } = App.useApp();
   const [scanCode, setScanCode] = useState('');
   const [scanPointId, setScanPointId] = useState<string>();
+  const [quantityPackages, setQuantityPackages] = useState<number | null>(1);
   const [pending, setPending] = useState<StockInRequest | null>(null);
   const [completed, setCompleted] = useState<StockInResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -39,6 +41,7 @@ function StockInPanel() {
       setPending(recovered.payload);
       setScanCode(recovered.payload.scan_code);
       setScanPointId(recovered.payload.scan_point_id);
+      setQuantityPackages(recovered.payload.quantity_packages ?? 1);
     }
   }, [user]);
 
@@ -49,18 +52,22 @@ function StockInPanel() {
   const point = resource.data?.points.find(row => row.scan_point_id === scanPointId);
   const activePoints = resource.data?.points.filter(row => row.is_active) ?? [];
   const validPreview = !!unit && !!product?.is_active && !!stock && !!point?.is_active;
-  const expected = validPreview ? (BigInt(stock.quantity_base) + BigInt(unit.conversion_factor)).toString() : null;
+  const quantityValid = Number.isInteger(quantityPackages) && quantityPackages !== null && quantityPackages >= 1 && quantityPackages <= 2147483647;
+  const amount = validPreview && quantityValid ? BigInt(unit.conversion_factor) * BigInt(quantityPackages) : null;
+  const expectedValue = amount !== null && stock ? BigInt(stock.quantity_base) + amount : null;
+  const withinLimit = expectedValue !== null && expectedValue <= 9223372036854775807n;
+  const expected = withinLimit ? expectedValue!.toString() : null;
   const canWrite = user?.role === 'ADMIN' || user?.role === 'STAFF';
 
   async function confirm() {
     if (!user || !canWrite || submitGate.current || completed) return;
-    if (!pending && !validPreview) {
-      message.error('Chọn điểm quét và mã quét hợp lệ trước khi xác nhận.');
+    if (!pending && (!validPreview || !quantityValid || !withinLimit)) {
+      message.error('Chọn điểm quét, mã quét và số đơn vị đóng gói hợp lệ trước khi xác nhận.');
       return;
     }
     const payload: StockInRequest = pending ?? {
       transaction_id: crypto.randomUUID(), scan_code: code,
-      scan_point_id: scanPointId!, movement_type: 'IN',
+      scan_point_id: scanPointId!, movement_type: 'IN', quantity_packages: quantityPackages!,
     };
     submitGate.current = true;
     setBusy(true);
@@ -73,7 +80,7 @@ function StockInPanel() {
       setPending(null);
       savePendingStockIn(user.user_id, null);
       resource.reload();
-      message.success('Đã nhập kho một đơn vị đóng gói.');
+      message.success('Đã nhập kho theo số đơn vị đóng gói đã chọn.');
     } catch (error) {
       // A lost response does not prove that the transaction rolled back.
       setSubmitError(error);
@@ -87,6 +94,7 @@ function StockInPanel() {
     if (!completed || busy) return;
     setCompleted(null);
     setScanCode('');
+    setQuantityPackages(1);
     setSubmitError(undefined);
   }
 
@@ -95,19 +103,21 @@ function StockInPanel() {
     savePendingStockIn(user.user_id, null);
     setPending(null);
     setScanCode('');
+    setQuantityPackages(1);
     setSubmitError(undefined);
   }
 
   return <div className="page-enter">
     <PageHeading title="Nhập kho bằng mã quét" action={<RefreshButton onClick={resource.reload} loading={resource.loading} />} />
     <Card className="content-card">
-      <Typography.Paragraph>Quét hoặc nhập mã, kiểm tra thông tin rồi xác nhận nhập một đơn vị đóng gói.</Typography.Paragraph>
+      <Typography.Paragraph>Quét hoặc nhập mã, chọn số đơn vị đóng gói rồi kiểm tra trước khi xác nhận nhập.</Typography.Paragraph>
       <ErrorNotice error={resource.error} retry={resource.reload} />
       {resource.loading && <Spin aria-label="Đang tải dữ liệu xem trước" />}
       {pending && <Alert type="warning" showIcon title="Lượt nhập đang được giữ để thử lại" description="Giữ nguyên mã giao dịch và nội dung. Nếu kết quả chưa rõ, bấm Thử lại để xác nhận mà không cộng tồn hai lần." style={{ marginBottom: 16 }} />}
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         <div><label htmlFor="stock-scan-point">Điểm quét</label><Select id="stock-scan-point" aria-label="Điểm quét" style={{ width: '100%' }} placeholder="Chọn điểm quét đang hoạt động" value={scanPointId} options={activePoints.map(row => ({ value: row.scan_point_id, label: `${row.scan_point_id} — ${row.point_name}` }))} onChange={setScanPointId} disabled={!!pending || !!completed || busy} /></div>
         <div><label htmlFor="stock-scan-code">Mã quét</label><Input id="stock-scan-code" aria-label="Mã quét" placeholder="Nhập, dán hoặc quét mã" maxLength={80} value={scanCode} onChange={event => setScanCode(event.target.value)} onPressEnter={event => event.preventDefault()} disabled={!!pending || !!completed || busy} /></div>
+        <div><label htmlFor="stock-quantity-packages">Số đơn vị đóng gói nhập</label><InputNumber id="stock-quantity-packages" aria-label="Số đơn vị đóng gói nhập" min={1} max={2147483647} precision={0} style={{ width: '100%' }} value={quantityPackages} onChange={setQuantityPackages} disabled={!!pending || !!completed || busy} /></div>
       </Space>
       {!pending && code && !resource.loading && !unit && <Alert type="error" showIcon title="Không tìm thấy mã quét trong dữ liệu hiện tại." style={{ marginTop: 16 }} />}
       {!pending && unit && product && !product.is_active && <Alert type="warning" showIcon title="Sản phẩm đã ngừng hoạt động." style={{ marginTop: 16 }} />}
@@ -118,19 +128,20 @@ function StockInPanel() {
         { key: 'code', label: 'Mã quét', children: unit.scan_code },
         { key: 'point', label: 'Điểm quét', children: `${point.scan_point_id} — ${point.point_name}` },
         { key: 'current', label: 'Tồn hiện tại (tham khảo)', children: <ExactNumber value={stock.quantity_base} unit={product.base_unit} /> },
-        { key: 'add', label: 'Dự kiến nhập', children: <ExactNumber value={String(unit.conversion_factor)} unit={product.base_unit} /> },
-        { key: 'expected', label: 'Tồn dự kiến (tham khảo)', children: <ExactNumber value={expected!} unit={product.base_unit} /> },
+        { key: 'add', label: 'Dự kiến nhập', children: amount === null ? 'Số lượng không hợp lệ' : <ExactNumber value={amount.toString()} unit={product.base_unit} /> },
+        { key: 'expected', label: 'Tồn dự kiến (tham khảo)', children: expected === null ? 'Vượt giới hạn tồn kho' : <ExactNumber value={expected} unit={product.base_unit} /> },
       ]} /><Typography.Paragraph type="secondary" style={{ marginTop: 12 }}>Tồn thực tế được backend tính khi xác nhận; số xem trước có thể thay đổi.</Typography.Paragraph></Card>}
       {submitError != null && <Alert type="error" showIcon title={errorMessage(submitError)} style={{ marginTop: 16 }} />}
       {completed && <Alert type="success" showIcon title="Đã nhập kho" description={<Descriptions column={1} items={[
         { key: 'transaction', label: 'Mã giao dịch', children: completed.transaction_id },
         { key: 'product', label: 'Sản phẩm', children: `${completed.product_id} — ${completed.product_name}` },
         { key: 'unit', label: 'Đơn vị', children: completed.unit_name },
+        { key: 'packages', label: 'Số đơn vị đóng gói', children: `${completed.quantity_packages} ${completed.unit_name}` },
         { key: 'quantity', label: 'Đã nhập', children: <ExactNumber value={completed.quantity_base} /> },
         { key: 'after', label: 'Tồn sau nhập', children: <ExactNumber value={completed.inventory_after} /> },
       ]} />} style={{ marginTop: 20 }} />}
       <Space style={{ marginTop: 20 }}>
-        {!completed && canWrite && <Button type="primary" loading={busy} disabled={busy || resource.loading || (!pending && !validPreview)} onClick={() => { void confirm(); }}>{pending ? 'Thử lại lượt nhập' : 'Xác nhận nhập kho'}</Button>}
+        {!completed && canWrite && <Button type="primary" loading={busy} disabled={busy || (!pending && (resource.loading || !validPreview || !quantityValid || !withinLimit))} onClick={() => { void confirm(); }}>{pending ? 'Thử lại lượt nhập' : 'Xác nhận nhập kho'}</Button>}
         {pending && submitError instanceof ApiError && [400, 401, 403, 404, 409].includes(submitError.status) && <Button disabled={busy} onClick={discardRejected}>Bỏ lượt bị từ chối</Button>}
         {completed && <Button type="primary" onClick={nextScan}>Lượt nhập tiếp theo</Button>}
       </Space>
@@ -145,7 +156,7 @@ export default function MovementPage() {
     <PageHeading title="Quản lý nhập/xuất kho" />
     <Tabs activeKey={tab} onChange={setTab} items={[
       { key: 'in', label: 'Nhập kho', forceRender: true, children: <StockInPanel /> },
-      { key: 'out', label: 'Xuất kho', children: <Card className="content-card"><Alert type="info" showIcon title="Chức năng xuất kho đang được phát triển." /></Card> },
+      { key: 'out', label: 'Xuất kho', children: <StockOutPanel /> },
       ...(user?.role === 'ADMIN' ? [{ key: 'kt2', label: 'Kiểm tra KT2', forceRender: true, children: <Kt2Panel /> }] : []),
     ]} />
   </div>;

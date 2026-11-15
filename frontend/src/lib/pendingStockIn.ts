@@ -11,7 +11,10 @@ export function parsePendingStockIn(raw: string | null): PendingStockIn | null {
     if (!entry.payload || typeof entry.payload !== 'object' || typeof entry.createdAt !== 'string' ||
       !Number.isFinite(Date.parse(entry.createdAt))) return null;
     const p = entry.payload as Record<string, unknown>;
-    if (Object.keys(p).length !== 4 || typeof p.transaction_id !== 'string' ||
+    if (!Object.keys(p).every(field => ['transaction_id', 'scan_code', 'scan_point_id', 'movement_type', 'quantity_packages'].includes(field)) ||
+      ![4, 5].includes(Object.keys(p).length) ||
+      (p.quantity_packages !== undefined && (!Number.isInteger(p.quantity_packages) || typeof p.quantity_packages !== 'number' || p.quantity_packages < 1 || p.quantity_packages > 2147483647)) ||
+      typeof p.transaction_id !== 'string' ||
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(p.transaction_id) ||
       p.movement_type !== 'IN' || typeof p.scan_code !== 'string' ||
       !p.scan_code.trim() || p.scan_code !== p.scan_code.trim() || p.scan_code.length > 80 ||

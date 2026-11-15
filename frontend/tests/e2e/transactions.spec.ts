@@ -77,8 +77,15 @@ test('ADMIN filters OUT, inactive point and Vietnam dates, then resets filters',
   await page.getByPlaceholder('Đến hết ngày (UTC+7)').press('Enter');
   await expect.poll(() => last.get('from')).toBe('2026-11-09T17:00:00.000Z');
   expect(last.get('to')).toBe('2026-11-11T17:00:00.000Z');
+  await page.getByRole('textbox', { name: 'Lọc mã sản phẩm' }).fill('SP013');
+  await page.getByRole('textbox', { name: 'Tìm UUID giao dịch' }).fill(id);
+  await expect.poll(() => last.get('transactionId')).toBe(id);
+  expect(Object.fromEntries(last)).toMatchObject({
+    page: '1', productId: 'SP013', movementType: 'OUT', scanPointId: 'SCAN-01',
+    from: '2026-11-09T17:00:00.000Z', to: '2026-11-11T17:00:00.000Z',
+  });
   await page.getByRole('button', { name: 'Xóa bộ lọc' }).click();
-  await expect.poll(() => last.has('movementType') || last.has('scanPointId') || last.has('from')).toBe(false);
+  await expect.poll(() => [...'transactionId productId movementType scanPointId from to'.split(' ')].some(key => last.has(key))).toBe(false);
   await expect(page.getByText('Chưa có dữ liệu phù hợp')).toBeVisible();
 });
 

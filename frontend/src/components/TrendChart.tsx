@@ -4,7 +4,7 @@ import type { Trend } from '../lib/api';
 import { chartCount, integer } from '../lib/format';
 import { colors } from '../theme';
 
-export function TrendChart({ rows }: { rows: Trend[] }) {
+export function TrendChart({ rows, granularity = 'day' }: { rows: Trend[]; granularity?: 'day' | 'month' }) {
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(760);
   useEffect(() => {
@@ -32,6 +32,6 @@ export function TrendChart({ rows }: { rows: Trend[] }) {
     <polyline points={line('in')} fill="none" stroke={colors.primary} strokeWidth="3" strokeLinejoin="round" />
     <polyline points={line('out')} fill="none" stroke={colors.warning} strokeWidth="2.5" strokeLinejoin="round" strokeDasharray="6 4" />
     {rows.map((row,index) => <g key={row.period_start}><title>{row.period_start.slice(0,10)} UTC · Nhập {integer(row.in_count)} · Xuất {integer(row.out_count)}</title><circle cx={x(index)} cy={y(points[index]?.in ?? 0)} r="3" fill={colors.primary} /><circle cx={x(index)} cy={y(points[index]?.out ?? 0)} r="3" fill={colors.warning} /></g>)}
-    {ticks.map(index => <text key={index} x={x(index)} y={top+plotHeight+28} textAnchor="middle" className="chart-label">{rows[index]?.period_start.slice(5,10).split('-').reverse().join('/')}</text>)}
+    {ticks.map(index => <text key={index} x={x(index)} y={top+plotHeight+28} textAnchor="middle" className="chart-label">{granularity === 'month' ? rows[index]?.period_start.slice(0,7).split('-').reverse().join('/') : rows[index]?.period_start.slice(5,10).split('-').reverse().join('/')}</text>)}
   </svg><div className="chart-legend"><span><i className="legend-in"/>Lượt nhập</span><span><i className="legend-out"/>Lượt xuất</span><span className="muted">Mốc thời gian UTC</span></div></div>;
 }
