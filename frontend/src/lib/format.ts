@@ -64,7 +64,7 @@ const errors: Record<string, string> = {
 };
 export function errorMessage(error: unknown): string {
   if (error instanceof ApiError) {
-    if (error.code === 'STOCK_MOVEMENT_ERROR') return error.message;
+    if (error.code === 'STOCK_MOVEMENT_ERROR' || error.code === 'USER_MANAGEMENT_ERROR' || error.code === 'ASSIGNED_SCAN_POINT_ERROR') return error.message;
     if (error.status === 429) return `Quá nhiều yêu cầu. Thử lại sau ${error.retryAfter ?? 900} giây.`;
     return errors[error.code] ?? (error.status === 503 ? 'Dịch vụ tạm thời không khả dụng. Vui lòng thử lại sau.' : 'Không thể hoàn tất yêu cầu. Vui lòng kiểm tra lại.');
   }

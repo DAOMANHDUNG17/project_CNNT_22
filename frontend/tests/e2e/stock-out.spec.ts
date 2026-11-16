@@ -19,16 +19,17 @@ async function setup(page: import('@playwright/test').Page, role: 'ADMIN' | 'STA
   let stock = initialStock;
   let inventoryReads = 0;
   await page.route('**/api/inventory', route => { inventoryReads++; return route.fulfill({ json: { data: [{ product_id: 'SP013', product_name: 'Bút mực', base_unit: 'chiếc', is_active: true, quantity_base: stock }], count: 1 } }); });
-  await page.route('**/api/scan-points', route => route.fulfill({ json: { data: [{ scan_point_id: 'SCAN-01', point_name: 'Cửa A', is_active: true }, { scan_point_id: 'SCAN-OFF', point_name: 'Cửa B', is_active: false }], count: 2 } }));
+  await page.route('**/api/scan-points/my', route => route.fulfill({ json: { data: [{ scan_point_id: 'SCAN-01', point_name: 'Cửa A', is_active: true }], count: 1 } }));
   return { setStock: (value: string) => { stock = value; }, inventoryReads: () => inventoryReads };
 }
 
 async function selectOut(page: import('@playwright/test').Page) {
   await page.goto('/stock-movement');
   await page.getByRole('tab', { name: 'Xuất kho' }).click();
-  await page.getByRole('combobox', { name: 'Điểm quét xuất kho' }).click();
+  const select = page.getByRole('combobox', { name: 'Điểm quét xuất kho', exact: true });
+  if (await select.count()) { await select.click(); await page.getByTitle('SCAN-01 — Cửa A', { exact: true }).click(); }
+  else await expect(page.getByRole('textbox', { name: 'Điểm quét được phân công' })).toHaveValue(/SCAN-01/);
   await expect(page.getByText('SCAN-OFF — Cửa B')).toHaveCount(0);
-  await page.getByText('SCAN-01 — Cửa A').last().click();
   await page.getByRole('textbox', { name: 'Mã quét xuất kho' }).fill('BOX-ABC');
 }
 

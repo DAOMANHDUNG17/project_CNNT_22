@@ -17,12 +17,13 @@ export class CreateStockMovementDto {
   @MaxLength(80)
   scan_code!: string;
 
-  @ApiProperty({ maxLength: 20, example: 'SCAN-01' })
+  @ApiPropertyOptional({ maxLength: 20, example: 'SCAN-01', description: 'Optional for STAFF: resolved from the unique active assignment. If supplied it must match. ADMIN must explicitly hold the requested grant.' })
+  @ValidateIf((_, value: unknown) => value !== undefined)
   @Transform(trimString)
   @IsString()
   @IsNotEmpty()
   @MaxLength(20)
-  scan_point_id!: string;
+  scan_point_id?: string;
 
   @ApiProperty({ enum: ['IN', 'OUT'], example: 'OUT' })
   @IsIn(['IN', 'OUT'])

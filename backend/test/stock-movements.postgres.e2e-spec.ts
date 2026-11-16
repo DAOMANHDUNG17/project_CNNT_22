@@ -63,6 +63,9 @@ describePostgres('POST /api/stock-movements with isolated PostgreSQL', () => {
         scan_point_id varchar(20) PRIMARY KEY, point_name varchar(100) NOT NULL,
         is_active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now()
       );
+      CREATE TABLE IF NOT EXISTS user_scan_point_access(user_id bigint NOT NULL REFERENCES users(user_id),
+        scan_point_id varchar(20) NOT NULL REFERENCES scan_points(scan_point_id),is_active boolean NOT NULL DEFAULT true,
+        assigned_by bigint REFERENCES users(user_id),assigned_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(user_id,scan_point_id));
       CREATE TABLE IF NOT EXISTS stock_transactions (
         transaction_id uuid PRIMARY KEY, product_id varchar(20) NOT NULL REFERENCES products(product_id),
         product_unit_id bigint NOT NULL, scan_point_id varchar(20) NOT NULL REFERENCES scan_points(scan_point_id),
@@ -130,6 +133,8 @@ describePostgres('POST /api/stock-movements with isolated PostgreSQL', () => {
         (7,'PFAIL','fail-piece',1,'FAIL-X',true);
       INSERT INTO scan_points(scan_point_id,point_name,is_active) VALUES
         ('SCAN-01','Gate 1',true),('SCAN-02','Gate 2',true),('SCAN-OFF','Offline Gate',false);
+      INSERT INTO user_scan_point_access(user_id,scan_point_id,assigned_by) VALUES
+        (1,'SCAN-01',1),(1,'SCAN-02',1),(1,'SCAN-OFF',1),(2,'SCAN-01',1),(3,'SCAN-01',1),(4,'SCAN-01',1);
     `);
   });
 
@@ -168,7 +173,7 @@ describePostgres('POST /api/stock-movements with isolated PostgreSQL', () => {
     const invalidBodies = [
       {}, { ...basePayload, transaction_id: undefined }, { ...basePayload, transaction_id: 'bad' },
       { ...basePayload, scan_code: undefined }, { ...basePayload, scan_code: '' }, { ...basePayload, scan_code: '   ' },
-      { ...basePayload, scan_point_id: undefined },
+      { ...basePayload, scan_point_id: null },
       { ...basePayload, movement_type: 'MOVE' }, { ...basePayload, quantity_base: '24' },
       { ...basePayload, user_id: '1' }, { ...basePayload, conversion_factor: 24 },
       { ...basePayload, inventory_after: '124' }, { ...basePayload, unknown: true },
@@ -176,8 +181,8 @@ describePostgres('POST /api/stock-movements with isolated PostgreSQL', () => {
     ];
     for (const body of invalidBodies) await post(body).expect(400);
     await post({ ...basePayload, transaction_id: uuid('20'), scan_code: 'UNKNOWN' }).expect(404);
-    await post({ ...basePayload, transaction_id: uuid('21'), scan_point_id: 'UNKNOWN' }).expect(404);
-    await post({ ...basePayload, transaction_id: uuid('22'), scan_point_id: 'SCAN-OFF' }).expect(409);
+    await post({ ...basePayload, transaction_id: uuid('21'), scan_point_id: 'UNKNOWN' }).expect(403);
+    await post({ ...basePayload, transaction_id: uuid('22'), scan_point_id: 'SCAN-OFF' }).expect(403);
     await post({ ...basePayload, transaction_id: uuid('23'), scan_code: 'INACTIVE-BOX' }).expect(409);
     await post({ ...basePayload, transaction_id: uuid('24'), scan_code: 'MISSING-BOX' }).expect(409);
     const [state] = await sql.unsafe("SELECT (SELECT quantity_base FROM inventory WHERE product_id='P1') quantity, (SELECT count(*) FROM stock_transactions) count");
@@ -300,8 +305,8 @@ describePostgres('POST /api/stock-movements with isolated PostgreSQL', () => {
     await sql.unsafe('ALTER TABLE inventory ENABLE TRIGGER qa_fail_inventory');
     await post({ ...out, scan_code: 'FAIL-X' }).expect(500);
     await post({ ...out, scan_code: 'UNKNOWN' }).expect(404);
-    await post({ ...out, scan_point_id: 'UNKNOWN' }).expect(404);
-    await post({ ...out, scan_point_id: 'SCAN-OFF' }).expect(409);
+    await post({ ...out, scan_point_id: 'UNKNOWN' }).expect(403);
+    await post({ ...out, scan_point_id: 'SCAN-OFF' }).expect(403);
     await post({ ...out, scan_code: 'INACTIVE-BOX' }).expect(409);
     await post({ ...out, scan_code: 'MISSING-BOX' }).expect(409);
     await post(out, 'viewer-token').expect(403);
@@ -471,5 +476,57 @@ describePostgres('POST /api/stock-movements with isolated PostgreSQL', () => {
     releaseUnit(); await holdUnit;
     expect((await movement).status).toBe(201);
     await Promise.all([productBlocker.end(), inventoryBlocker.end(), unitBlocker.end()]);
+  }, 15000);
+
+  const assignStaff = (ids: string[]) => request(app.getHttpServer()).put('/api/users/2/scan-points').set('Authorization', 'Bearer admin-token').send({ scan_point_ids: ids });
+  it('STAFF IN/OUT uses the assigned DB point even without client point, and preserves old history after reassignment', async () => {
+    const { scan_point_id: _point, ...body } = basePayload;
+    const incoming = await post({ ...body, transaction_id: uuid('201') }, 'staff-token').expect(201);
+    const outgoing = await post({ ...body, transaction_id: uuid('202'), movement_type: 'OUT' }, 'staff-token').expect(201);
+    expect(incoming.body.data).toMatchObject({ user_id: '2', scan_point_id: 'SCAN-01' }); expect(outgoing.body.data.scan_point_id).toBe('SCAN-01');
+    await assignStaff(['SCAN-02']).expect(200);
+    await post({ ...body, transaction_id: uuid('203') }, 'staff-token').expect(201).expect(res => { expect(res.body.data.scan_point_id).toBe('SCAN-02'); });
+    const history = await request(app.getHttpServer()).get(`/api/transactions?transactionId=${uuid('201')}`).set('Authorization', 'Bearer staff-token').expect(200);
+    expect(history.body.data[0].scan_point_id).toBe('SCAN-01');
+  });
+  it('rejects spoofing, revoked/no grants and multiple legacy active grants with no stock/history changes', async () => {
+    await post({ ...basePayload, transaction_id: uuid('210'), scan_point_id: 'SCAN-02' }, 'staff-token').expect(403);
+    await assignStaff([]).expect(200); await post({ ...basePayload, transaction_id: uuid('211') }, 'staff-token').expect(403);
+    await sql.unsafe("INSERT INTO user_scan_point_access(user_id,scan_point_id,assigned_by) VALUES(2,'SCAN-02',1) ON CONFLICT(user_id,scan_point_id) DO UPDATE SET is_active=true");
+    await sql.unsafe('UPDATE user_scan_point_access SET is_active=true WHERE user_id=2');
+    await post({ ...basePayload, transaction_id: uuid('212') }, 'staff-token').expect(403);
+    await request(app.getHttpServer()).get('/api/scan-points/my').set('Authorization', 'Bearer staff-token').expect(403);
+    const [state] = await sql.unsafe("SELECT (SELECT quantity_base::text FROM inventory WHERE product_id='P1') AS quantity,(SELECT count(*)::int FROM stock_transactions) AS count");
+    expect(state).toMatchObject({ quantity: '100', count: 0 });
+    await assignStaff(['SCAN-01', 'SCAN-02']).expect(400);
+  });
+  it('does not permit old UUID replay after reassignment or revocation and never changes its original point', async () => {
+    const body = { ...basePayload, transaction_id: uuid('220'), movement_type: 'OUT' };
+    await post(body, 'staff-token').expect(201); await post(body, 'staff-token').expect(200);
+    await assignStaff(['SCAN-02']).expect(200);
+    await post(body, 'staff-token').expect(403);
+    const { scan_point_id: _point, ...omitted } = body; await post(omitted, 'staff-token').expect(403);
+    await assignStaff([]).expect(200); await post(body, 'staff-token').expect(403);
+    const [state] = await sql.unsafe('SELECT scan_point_id,inventory_after::text,(SELECT count(*)::int FROM stock_transactions) AS count FROM stock_transactions WHERE transaction_id=$1', [uuid('220')]);
+    expect(state).toMatchObject({ scan_point_id: 'SCAN-01', inventory_after: '76', count: 1 });
+  });
+  it('holds assignment authorization until stock commit, then permits reassignment for new UUIDs', async () => {
+    const blocker = postgres(qaUrl!, { max: 1 });
+    let release!: () => void; let ready!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; }); const acquired = new Promise<void>(resolve => { ready = resolve; });
+    const held = blocker.begin(async tx => { await tx.unsafe("SELECT 1 FROM products WHERE product_id='P1' FOR UPDATE"); ready(); await gate; });
+    await acquired;
+    const movement = post({ ...basePayload, transaction_id: uuid('230') }, 'staff-token').then(r => r);
+    try {
+      let blocked = false;
+      for (let i = 0; i < 100; i++) { const rows = await sql.unsafe("SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%FROM public.products%FOR UPDATE%'"); if (rows.length) { blocked = true; break; } await new Promise(resolve => setTimeout(resolve, 20)); }
+      expect(blocked).toBe(true);
+      let reassigned = false; const assignment = assignStaff(['SCAN-02']).then(r => { reassigned = true; return r; });
+      await new Promise(resolve => setTimeout(resolve, 80)); expect(reassigned).toBe(false);
+      release(); await held;
+      expect((await movement).body.data.scan_point_id).toBe('SCAN-01'); expect((await assignment).status).toBe(200);
+      await post({ ...basePayload, transaction_id: uuid('231'), scan_point_id: 'SCAN-02' }, 'staff-token').expect(201);
+      expect((await sql.unsafe('SELECT scan_point_id FROM stock_transactions WHERE transaction_id=$1', [uuid('230')]))[0].scan_point_id).toBe('SCAN-01');
+    } finally { release(); await held; await blocker.end(); }
   }, 15000);
 });

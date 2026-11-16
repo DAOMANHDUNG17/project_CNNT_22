@@ -37,9 +37,9 @@ h1, h2, h3 { color: var(--sw-heading); }
 .topbar-right { flex-shrink: 0; }
 .station-status { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--sw-border); border-radius: 10px; color: var(--sw-secondary); background: var(--sw-background); white-space: nowrap; }
 .station-status > .anticon { color: var(--sw-primary); font-size: 17px; }
-.station-status-copy { display: flex; flex-direction: column; gap: 2px; line-height: 1.25; }
+.station-status-copy { display: flex; flex-direction: column; gap: 2px; line-height: 1.25; min-width: 0; }
 .station-status-copy small { font-size: 10px; }
-.station-status-copy strong { font-size: 11px; color: var(--sw-heading); font-weight: 600; }
+.station-status-copy strong { font-size: 11px; color: var(--sw-heading); font-weight: 600; max-width: min(180px, 40vw); overflow: hidden; text-overflow: ellipsis; }
 .mobile-menu-button.ant-btn { display: none; }
 .profile-button.ant-btn { height: 46px; padding: 0; gap: 10px; }
 .user-avatar.ant-avatar { background: var(--sw-tint); color: var(--sw-primary); border: 1px solid var(--sw-border); font-weight: 600; }

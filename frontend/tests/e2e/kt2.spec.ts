@@ -24,7 +24,7 @@ async function setup(page: import('@playwright/test').Page, role = 'ADMIN') {
   await page.route('**/api/auth/me', route => route.fulfill({ json: { user_id: '1', username: 'qa', display_name: 'QA', role } }));
   await page.route('**/api/products', route => route.fulfill({ json: { data: [{ product_id: 'SP013', product_name: 'Bút mực', base_unit: 'Chiếc', is_active: true }], count: 1 } }));
   await page.route('**/api/product-units', route => route.fulfill({ json: { data: [{ product_unit_id: '30', product_id: 'SP013', product_name: 'Bút mực', unit_name: 'Hộp nhỏ', conversion_factor: 24, scan_code: 'SW-SP013-BOX24', is_base_unit: false }], count: 1 } }));
-  await page.route('**/api/scan-points', route => route.fulfill({ json: { data: [{ scan_point_id: 'SCAN-01', point_name: 'Cửa A', is_active: true }], count: 1 } }));
+  await page.route('**/api/scan-points/my', route => route.fulfill({ json: { data: [{ scan_point_id: 'SCAN-01', point_name: 'Cửa A', is_active: true }], count: 1 } }));
   let stock = '48'; let inventoryReads = 0; let productTotal = 2; let exactTotal = 1;
   let currentRow = { ...row };
   await page.route('**/api/inventory', route => {

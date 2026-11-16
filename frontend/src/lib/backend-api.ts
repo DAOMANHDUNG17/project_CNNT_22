@@ -2,6 +2,25 @@ import { ApiError } from './api-types';
 import type { RequestOptions } from './api-types';
 import { supabase } from './supabase';
 
+export async function authorizedPut<T>(path: string, body: object): Promise<T> {
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw new ApiError(503, 'AUTH_UNAVAILABLE', 'Không thể đọc phiên đăng nhập.');
+  if (!data.session) throw new ApiError(401, 'AUTHENTICATION_REQUIRED', 'Vui lòng đăng nhập.');
+  const apiUrl = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api').replace(/\/$/, '');
+  const response = await fetch(`${apiUrl}${path}`, {
+    method: 'PUT', headers: { Authorization: `Bearer ${data.session.access_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { message?: unknown } | null;
+    if (typeof payload?.message === 'string' && [400, 404, 409, 503].includes(response.status)) {
+      throw new ApiError(response.status, 'USER_MANAGEMENT_ERROR', payload.message);
+    }
+    const code = response.status === 401 ? 'AUTHENTICATION_REQUIRED' : response.status === 403 ? 'FORBIDDEN' : response.status === 400 ? 'INVALID_BODY' : 'REQUEST_FAILED';
+    throw new ApiError(response.status, code, 'Không thể lưu quyền điểm quét.');
+  }
+  return await response.json() as T;
+}
+
 export async function authorizedGet<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { data, error } = await supabase.auth.getSession();
   if (error) throw new ApiError(503, 'AUTH_UNAVAILABLE', 'Không thể đọc phiên đăng nhập.');
@@ -13,6 +32,10 @@ export async function authorizedGet<T>(path: string, options: RequestOptions = {
     signal: options.signal,
   });
   if (!response.ok) {
+    if (path === '/scan-points/my') {
+      const payload = await response.json().catch(() => null) as { message?: unknown } | null;
+      if (typeof payload?.message === 'string' && (response.status === 503 || response.status === 403 && /^(Tài khoản |Chưa được |Điểm quét )/u.test(payload.message))) throw new ApiError(response.status, 'ASSIGNED_SCAN_POINT_ERROR', payload.message);
+    }
     const code = response.status === 400 && path.startsWith('/transactions') ? 'INVALID_QUERY'
       : response.status === 401 ? 'AUTHENTICATION_REQUIRED'
       : response.status === 403 ? 'FORBIDDEN' : 'REQUEST_FAILED';
@@ -49,13 +72,16 @@ export async function authorizedPostWithStatus<T>(path: string, body: object): P
       'Base unit conversion factor must be 1': 'BASE_UNIT_FACTOR_INVALID',
       'Base unit name must match the product base unit': 'BASE_UNIT_NAME_INVALID',
     };
-    const payload = path === '/product-units' || path === '/stock-movements' ? await response.json().catch(() => null) as { message?: unknown } | null : null;
+    const payload = path === '/product-units' || path === '/stock-movements' || path === '/users' ? await response.json().catch(() => null) as { message?: unknown } | null : null;
+    if (path === '/users' && typeof payload?.message === 'string' && [409, 503].includes(response.status)) {
+      throw new ApiError(response.status, 'USER_MANAGEMENT_ERROR', payload.message);
+    }
     const code = response.status === 400 ? 'INVALID_BODY'
       : response.status === 401 ? 'AUTHENTICATION_REQUIRED'
         : response.status === 403 ? 'FORBIDDEN'
           : response.status === 409 ? 'RESOURCE_CONFLICT' : 'REQUEST_FAILED';
     const unitCode = typeof payload?.message === 'string' ? unitMessages[payload.message] : undefined;
-    if (path === '/stock-movements' && [404, 409].includes(response.status) && typeof payload?.message === 'string') {
+    if (path === '/stock-movements' && typeof payload?.message === 'string' && ([404, 409].includes(response.status) || response.status === 403 && /^(Tài khoản |Chưa được |Điểm quét )/u.test(payload.message))) {
       throw new ApiError(response.status, 'STOCK_MOVEMENT_ERROR', payload.message);
     }
     throw new ApiError(response.status, unitCode ?? code, 'Không thể lưu dữ liệu.');
@@ -79,6 +105,9 @@ export async function authorizedPatch<T>(path: string, body: object): Promise<T>
   });
   if (!response.ok) {
     const payload = await response.json().catch(() => null) as { message?: unknown } | null;
+    if (path.startsWith('/users/') && typeof payload?.message === 'string' && [404, 409, 503].includes(response.status)) {
+      throw new ApiError(response.status, 'USER_MANAGEMENT_ERROR', payload.message);
+    }
     const unitMessages: Record<string, string> = {
       'Product unit not found': 'PRODUCT_UNIT_NOT_FOUND',
       'Scan code already exists': 'SCAN_CODE_CONFLICT',

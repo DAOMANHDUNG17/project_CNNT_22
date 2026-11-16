@@ -5,6 +5,13 @@ const envFile = readFileSync(new URL('../../.env', import.meta.url), 'utf8');
 const supabaseUrl = /^VITE_SUPABASE_URL=(.+)$/m.exec(envFile)?.[1]?.trim();
 const storageKey = supabaseUrl && `sb-${new URL(supabaseUrl).hostname.split('.')[0]}-auth-token`;
 
+async function preparePoint(page: import('@playwright/test').Page) {
+  await expect(page.getByRole('textbox', { name: 'Mã quét', exact: true })).toBeVisible();
+  const select = page.getByRole('combobox', { name: 'Điểm quét', exact: true });
+  if (await select.count()) { await select.click(); await page.getByTitle('SCAN-01 — Cửa A', { exact: true }).click(); }
+  else await expect(page.getByRole('textbox', { name: 'Điểm quét được phân công' })).toHaveValue(/SCAN-01/);
+}
+
 async function setup(page: import('@playwright/test').Page, role: 'ADMIN' | 'STAFF' | 'VIEWER' = 'STAFF') {
   test.skip(!storageKey, 'Supabase URL is needed for the local test session');
   await page.addInitScript(({ key }) => {
@@ -21,11 +28,10 @@ async function setup(page: import('@playwright/test').Page, role: 'ADMIN' | 'STA
   let inventory = '100';
   let inventoryReads = 0;
   await page.route('**/api/inventory', route => { inventoryReads++; return route.fulfill({ json: { data: [{ product_id: 'SP013', product_name: 'Bút mực', base_unit: 'chiếc', is_active: true, quantity_base: inventory }], count: 1 } }); });
-  await page.route('**/api/scan-points', route => route.fulfill({ json: { data: [
-    { scan_point_id: 'SCAN-01', point_name: 'Cửa A', is_active: true },
-    { scan_point_id: 'SCAN-02', point_name: 'Cửa B', is_active: false },
-  ], count: 2 } }));
-  return { setInventory: (value: string) => { inventory = value; }, inventoryReads: () => inventoryReads };
+  let assigned = ['SCAN-01'];
+  let assignmentReads = 0;
+  await page.route('**/api/scan-points/my', route => { assignmentReads++; return route.fulfill({ json: { data: assigned.map(id => ({ scan_point_id: id, point_name: id === 'SCAN-01' ? 'Cửa A' : 'Cửa B', is_active: true })), count: assigned.length } }); });
+  return { setInventory: (value: string) => { inventory = value; }, inventoryReads: () => inventoryReads, setAssignment: (ids: string[]) => { assigned = ids; }, assignmentReads: () => assignmentReads };
 }
 
 test('scan preview needs explicit confirmation, then bearer POST refreshes real inventory', async ({ page }) => {
@@ -46,9 +52,8 @@ test('scan preview needs explicit confirmation, then bearer POST refreshes real 
   });
   await page.goto('/stock-movement');
   await expect(page.getByText('Quét hoặc nhập mã')).toBeVisible();
-  await page.locator('.ant-select').click();
+  await preparePoint(page);
   await expect(page.getByText('SCAN-02 — Cửa B')).toHaveCount(0);
-  await page.getByText('SCAN-01 — Cửa A').last().click();
   await page.getByRole('textbox', { name: 'Mã quét' }).fill('BOX-ABC');
   await page.getByRole('textbox', { name: 'Mã quét' }).press('Enter');
   await expect(page.getByText('1 Hộp = 24 chiếc')).toBeVisible();
@@ -77,8 +82,7 @@ test('editable IN count previews and submits three packages using the database f
     return route.fulfill({ status: 201, json: { data: { ...body, product_id: 'SP013', product_name: 'Bút mực', unit_name: 'Hộp', quantity_base: '72', inventory_before: '100', inventory_after: '172' } } });
   });
   await page.goto('/stock-movement');
-  await page.getByRole('combobox', { name: 'Điểm quét' }).click();
-  await page.getByText('SCAN-01 — Cửa A').last().click();
+  await preparePoint(page);
   await page.getByRole('textbox', { name: 'Mã quét' }).fill('BOX-ABC');
   await page.getByRole('spinbutton', { name: 'Số đơn vị đóng gói nhập' }).fill('3');
   await expect(page.getByText('72 chiếc', { exact: true })).toBeVisible();
@@ -88,6 +92,58 @@ test('editable IN count previews and submits three packages using the database f
   await expect(page.getByText('Đã nhập kho', { exact: true })).toBeVisible();
   expect(bodies).toHaveLength(1);
   expect(bodies[0]).toMatchObject({ movement_type: 'IN', quantity_packages: 3 });
+});
+
+test('STAFF sees the backend assignment as locked text and cannot select a forged local station', async ({ page }) => {
+  await setup(page); await page.addInitScript(() => { localStorage.setItem('station', 'SCAN-02'); sessionStorage.setItem('scan_point_id', 'SCAN-02'); });
+  await page.goto('/stock-movement');
+  await expect(page.getByRole('textbox', { name: 'Điểm quét được phân công' })).toHaveValue('SCAN-01 — Cửa A');
+  await expect(page.getByRole('textbox', { name: 'Điểm quét được phân công' })).toHaveAttribute('readonly', '');
+  await expect(page.getByRole('combobox', { name: 'Điểm quét', exact: true })).toHaveCount(0);
+  await expect(page.locator('.station-status')).toContainText('SCAN-01');
+});
+
+test('header and IN/OUT share one permission request and update together on reassignment/revocation', async ({ page }) => {
+  const db = await setup(page); await page.goto('/stock-movement');
+  await expect(page.locator('.station-status')).toContainText('SCAN-01'); expect(db.assignmentReads()).toBe(1);
+  db.setAssignment(['SCAN-02']); await page.getByRole('button', { name: /Làm mới/ }).click();
+  await expect(page.locator('.station-status')).toContainText('SCAN-02');
+  await expect(page.getByRole('textbox', { name: 'Điểm quét được phân công' })).toHaveValue('SCAN-02 — Cửa B'); expect(db.assignmentReads()).toBe(2);
+  await page.getByRole('tab', { name: 'Xuất kho' }).click();
+  await expect(page.getByRole('textbox', { name: 'Điểm quét được phân công' })).toHaveValue('SCAN-02 — Cửa B'); expect(db.assignmentReads()).toBe(2);
+  db.setAssignment([]); await page.getByRole('button', { name: /Làm mới/ }).click();
+  await expect(page.locator('.station-status')).toContainText('Chưa gán điểm quét');
+  await expect(page.getByRole('textbox', { name: 'Điểm quét được phân công' })).toHaveValue('Chưa có phân công hợp lệ');
+  await expect(page.getByRole('button', { name: 'Xác nhận xuất kho' })).toBeDisabled(); expect(db.assignmentReads()).toBe(3);
+});
+
+for (const assigned of [[], ['SCAN-01', 'SCAN-02']]) test(`STAFF invalid assignment ${assigned.length} disables stock confirmation`, async ({ page }) => {
+  const db = await setup(page); db.setAssignment(assigned); let writes = 0;
+  await page.route('**/api/stock-movements', route => { writes++; return route.fulfill({ status: 403, json: {} }); });
+  await page.goto('/stock-movement'); await page.getByRole('textbox', { name: 'Mã quét', exact: true }).fill('BOX-ABC');
+  await expect(page.getByRole('button', { name: 'Xác nhận nhập kho' })).toBeDisabled(); expect(writes).toBe(0);
+});
+
+test('assignment change 403 refreshes locked context, preserves pending UUID/point and uses a new UUID only after explicit discard', async ({ page }) => {
+  const db = await setup(page); const bodies: Record<string, unknown>[] = [];
+  await page.route('**/api/stock-movements', route => {
+    const body = route.request().postDataJSON(); bodies.push(body);
+    if (bodies.length === 1) { db.setAssignment(['SCAN-02']); return route.fulfill({ status: 403, json: { message: 'Điểm quét không thuộc phân công hiện tại của tài khoản.' } }); }
+    return route.fulfill({ status: 201, json: { data: { ...body, product_id: 'SP013', product_name: 'Bút mực', unit_name: 'Hộp', quantity_base: '24', inventory_before: '100', inventory_after: '124' } } });
+  });
+  await page.goto('/stock-movement'); await page.getByRole('textbox', { name: 'Mã quét', exact: true }).fill('BOX-ABC');
+  await page.getByRole('button', { name: 'Xác nhận nhập kho' }).click();
+  await expect(page.getByText('Điểm quét không thuộc phân công hiện tại của tài khoản.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Điểm quét được phân công' })).toHaveValue('SCAN-02 — Cửa B');
+  await expect(page.locator('.station-status')).toContainText('SCAN-02');
+  await expect(page.getByRole('button', { name: 'Thử lại lượt nhập' })).toBeDisabled();
+  const pending = await page.evaluate(() => JSON.parse(sessionStorage.getItem('warehouse:pending-stock-in:42') || 'null'));
+  expect(pending.payload).toEqual(bodies[0]); expect(pending.payload.scan_point_id).toBe('SCAN-01');
+  await expect(page.getByText('Đã nhập kho', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Bỏ lượt bị từ chối' }).click();
+  await page.getByRole('textbox', { name: 'Mã quét', exact: true }).fill('BOX-ABC'); await page.getByRole('button', { name: 'Xác nhận nhập kho' }).click();
+  await expect(page.getByText('Đã nhập kho', { exact: true })).toBeVisible();
+  expect(bodies[1]!.scan_point_id).toBe('SCAN-02'); expect(bodies[1]!.transaction_id).not.toBe(bodies[0]!.transaction_id);
 });
 
 test('network failure preserves UUID and freezes inputs for an exact retry', async ({ page }) => {
@@ -104,8 +160,7 @@ test('network failure preserves UUID and freezes inputs for an exact retry', asy
     await route.fulfill({ status: 200, json: { data: { ...body, product_id: 'SP013', product_name: 'Bút mực', unit_name: 'Hộp', quantity_base: '72', inventory_before: '100', inventory_after: '172' } } });
   });
   await page.goto('/stock-movement');
-  await page.locator('.ant-select').click();
-  await page.getByText('SCAN-01 — Cửa A').last().click();
+  await preparePoint(page);
   await page.getByRole('textbox', { name: 'Mã quét' }).fill('BOX-ABC');
   await page.getByRole('spinbutton', { name: 'Số đơn vị đóng gói nhập' }).fill('3');
   await page.getByRole('button', { name: 'Xác nhận nhập kho' }).click();
@@ -130,8 +185,7 @@ test('business conflict keeps the request and shows the backend message without 
   await setup(page, 'ADMIN');
   await page.route('**/api/stock-movements', route => route.fulfill({ status: 409, json: { message: 'Điểm quét đã ngừng hoạt động.' } }));
   await page.goto('/stock-movement');
-  await page.locator('.ant-select').click();
-  await page.getByText('SCAN-01 — Cửa A').last().click();
+  await preparePoint(page);
   await page.getByRole('textbox', { name: 'Mã quét' }).fill('BOX-ABC');
   await page.getByRole('button', { name: 'Xác nhận nhập kho' }).click();
   await expect(page.getByText('Điểm quét đã ngừng hoạt động.')).toBeVisible();
@@ -152,8 +206,7 @@ for (const errorCase of [
       json: { message: errorCase.status === 404 ? errorCase.message : 'Rejected' },
     }));
     await page.goto('/stock-movement');
-    await page.locator('.ant-select').click();
-    await page.getByText('SCAN-01 — Cửa A').last().click();
+    await preparePoint(page);
     await page.getByRole('textbox', { name: 'Mã quét' }).fill('BOX-ABC');
     await page.getByRole('button', { name: 'Xác nhận nhập kho' }).click();
     await expect(page.getByText(errorCase.message)).toBeVisible();
