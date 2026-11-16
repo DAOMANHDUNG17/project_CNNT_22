@@ -9,3 +9,7 @@ export interface ScanPointsResponse {
 export function listDatabaseScanPoints(options: RequestOptions = {}): Promise<ScanPointsResponse> {
   return authorizedGet<ScanPointsResponse>('/scan-points', options);
 }
+
+export function listMyScanPoints(options: RequestOptions = {}): Promise<ScanPointsResponse> {
+  return authorizedGet<ScanPointsResponse>('/scan-points/my', options);
+}

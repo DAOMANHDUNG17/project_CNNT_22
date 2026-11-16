@@ -28,14 +28,17 @@ describe('POST /api/stock-movements (e2e with transactional database fake)', () 
   let verify: jest.Mock;
   let role: string;
   let userId: string;
+  let assignedIds: string[];
 
   beforeEach(async () => {
     stock = '100'; history = new Map(); factor = 24; productActive = true;
     pointActive = true; pointMissing = false; inventoryMissing = false;
     insertFailure = false; updateFailure = false; unitCode = payload.scan_code; role = 'STAFF'; userId = '42';
+    assignedIds = ['SCAN-01'];
     verify = jest.fn().mockResolvedValue(actor.auth_user_id);
     query = jest.fn(async (sql: string, args: unknown[] = []) => {
       if (sql.startsWith('SELECT pg_advisory_xact_lock')) return [{}];
+      if (sql.includes('FROM public.user_scan_point_access')) return assignedIds.map(scan_point_id => ({ scan_point_id }));
       if (sql.includes('FROM public.users') && !sql.includes('FOR SHARE')) return [{ ...actor, user_id: userId, role }];
       if (sql.startsWith('SELECT t.transaction_id')) {
         const row = history.get(String(args[0]));
@@ -112,7 +115,7 @@ describe('POST /api/stock-movements (e2e with transactional database fake)', () 
 
   it.each([
     {}, { ...payload, transaction_id: 'bad' }, { ...payload, scan_code: ' ' },
-    { ...payload, scan_point_id: undefined }, { ...payload, movement_type: 'MOVE' },
+    { ...payload, scan_point_id: null }, { ...payload, movement_type: 'MOVE' },
     { ...payload, user_id: '42' }, { ...payload, quantity_base: '24' },
     { ...payload, quantity_packages: 0 }, { ...payload, quantity_packages: -1 },
     { ...payload, quantity_packages: 1.5 }, { ...payload, quantity_packages: '2' },
@@ -187,9 +190,10 @@ describe('POST /api/stock-movements (e2e with transactional database fake)', () 
   it('rejects OUT UUID reuse with changed type, code, point or actor', async () => {
     const out = { ...payload, movement_type: 'OUT' };
     await post(app, out).expect(201);
-    for (const changed of [{ movement_type: 'IN' }, { scan_code: 'OTHER' }, { scan_point_id: 'SCAN-02' }]) {
+    for (const changed of [{ movement_type: 'IN' }, { scan_code: 'OTHER' }]) {
       await post(app, { ...out, ...changed }).expect(409);
     }
+    await post(app, { ...out, scan_point_id: 'SCAN-02' }).expect(403);
     userId = '43'; await post(app, out).expect(409);
     expect(stock).toBe('76'); expect(history.size).toBe(1);
   });
@@ -204,7 +208,7 @@ describe('POST /api/stock-movements (e2e with transactional database fake)', () 
 
   it('returns 200 from history on same UUID even after code rename/inactivation', async () => {
     await post(app).expect(201);
-    unitCode = 'NEW-CODE'; productActive = false; pointActive = false;
+    unitCode = 'NEW-CODE'; productActive = false;
     const replay = await post(app).expect(200);
     expect(replay.body.data).toMatchObject({ scan_code_snapshot: payload.scan_code, inventory_after: '124' });
     expect(stock).toBe('124'); expect(history.size).toBe(1);
@@ -214,7 +218,7 @@ describe('POST /api/stock-movements (e2e with transactional database fake)', () 
     { scan_code: 'OTHER' }, { scan_point_id: 'SCAN-02' },
   ])('rejects UUID reuse with changed business identity: %p', async changed => {
     await post(app).expect(201);
-    await post(app, { ...payload, ...changed }).expect(409);
+    await post(app, { ...payload, ...changed }).expect('scan_point_id' in changed ? 403 : 409);
     expect(stock).toBe('124'); expect(history.size).toBe(1);
   });
 
@@ -227,8 +231,8 @@ describe('POST /api/stock-movements (e2e with transactional database fake)', () 
 
   it('rejects missing/inactive references and missing inventory safely', async () => {
     unitCode = 'OTHER'; await post(app).expect(404); unitCode = payload.scan_code;
-    pointMissing = true; await post(app).expect(404); pointMissing = false;
-    pointActive = false; await post(app).expect(409); pointActive = true;
+    pointMissing = true; await post(app).expect(403); pointMissing = false;
+    pointActive = false; await post(app).expect(403); pointActive = true;
     productActive = false; await post(app).expect(409); productActive = true;
     inventoryMissing = true; await post(app).expect(409);
     expect(stock).toBe('100'); expect(history.size).toBe(0);
@@ -245,5 +249,22 @@ describe('POST /api/stock-movements (e2e with transactional database fake)', () 
     stock = '9223372036854775800';
     await post(app).expect(409);
     expect(stock).toBe('9223372036854775800'); expect(history.size).toBe(0);
+  });
+  it('resolves STAFF point from the database when client omits it and ignores station/IP headers', async () => {
+    const { scan_point_id: _point, ...body } = payload;
+    const response = await request(app.getHttpServer()).post('/api/stock-movements?station=SCAN-02').set('Authorization', 'Bearer valid-token').set('X-VLAN', '20').send(body).expect(201);
+    expect(response.body.data.scan_point_id).toBe('SCAN-01');
+  });
+  it('rejects missing, ambiguous and revoked assignments including committed UUID retries', async () => {
+    assignedIds = []; await post(app).expect(403);
+    assignedIds = ['SCAN-01', 'SCAN-02']; await post(app).expect(403);
+    assignedIds = ['SCAN-01']; await post(app).expect(201);
+    assignedIds = []; await post(app).expect(403);
+    assignedIds = ['SCAN-02']; await post(app).expect(403);
+    const { scan_point_id: _point, ...body } = payload; await post(app, body).expect(403);
+    expect(stock).toBe('124'); expect(history.size).toBe(1);
+  });
+  it('ADMIN has no implicit assignment bypass', async () => {
+    role = 'ADMIN'; assignedIds = []; await post(app).expect(403); expect(stock).toBe('100'); expect(history.size).toBe(0);
   });
 });

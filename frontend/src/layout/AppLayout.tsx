@@ -1,15 +1,29 @@
 import { useState } from 'react';
 import { Avatar, Breadcrumb, Button, Drawer, Dropdown, Layout, Menu, Space, Tooltip } from 'antd';
 import { AppstoreOutlined, ArrowRightOutlined, HomeOutlined, DatabaseOutlined, DownOutlined,
-  EnvironmentOutlined, HistoryOutlined, LogoutOutlined, MenuUnfoldOutlined,
+  EnvironmentOutlined, HistoryOutlined, LogoutOutlined, MenuUnfoldOutlined, ReloadOutlined,
   ScanOutlined, TeamOutlined } from '@ant-design/icons';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { useMutation } from '../hooks/useResource';
 import { roleLabels } from '../lib/format';
+import { errorMessage } from '../lib/format';
+import { useAssignedScanPoints } from '../hooks/useAssignedScanPoints';
+import { AssignedScanPointsProvider } from '../components/AssignedScanPointsProvider';
 
 export function AppLayout() {
+  return <AssignedScanPointsProvider><AppLayoutContent /></AssignedScanPointsProvider>;
+}
+
+function AppLayoutContent() {
   const { user, logout } = useAuth();
+  const assignment = useAssignedScanPoints();
+  const ambiguous = assignment.staff && assignment.points.length > 1;
+  const pointLabel = assignment.loading ? 'Đang tải điểm quét…' : assignment.error ? 'Chưa tải được điểm quét'
+    : ambiguous ? 'Phân công chưa hợp lệ' : assignment.points.length ? assignment.points.map(point => point.scan_point_id).join(', ') : 'Chưa gán điểm quét';
+  const pointTooltip = assignment.error ? errorMessage(assignment.error) : ambiguous ? 'Tài khoản STAFF có nhiều điểm quét active. Liên hệ ADMIN để xử lý.'
+    : assignment.points.length ? <div>{assignment.points.map(point => <div key={point.scan_point_id}>{point.scan_point_id} — {point.point_name}</div>)}</div>
+      : assignment.loading ? 'Đang tải điểm quét được cấp từ backend.' : 'Tài khoản chưa được cấp điểm quét đang hoạt động.';
   const location = useLocation(), navigate = useNavigate();
   const [drawer, setDrawer] = useState(false);
   const mutation = useMutation();
@@ -20,7 +34,7 @@ export function AppLayout() {
     { key: '/transactions', icon: <HistoryOutlined />, label: 'Lịch sử giao dịch' },
     ...(user?.role === 'ADMIN' || user?.role === 'STAFF' ? [{ key: '/stock-movement', icon: <ScanOutlined />, label: 'Quản lý nhập/xuất kho' }] : []),
     ...(user?.role === 'ADMIN' ? [{ key: '/scan-points', icon: <EnvironmentOutlined />, label: 'Quản lý điểm quét' }] : []),
-    ...(user?.role === 'ADMIN' ? [{ key: '/users', icon: <TeamOutlined />, label: 'Người dùng' }] : []),
+    ...(user?.role === 'ADMIN' ? [{ key: '/users', icon: <TeamOutlined />, label: 'Quản lý người dùng' }] : []),
   ];
   const selected = menu.find(item => item.key === '/' ? location.pathname === '/' : location.pathname.startsWith(item.key));
   const navigation = <div className="sidebar-inner">
@@ -41,10 +55,11 @@ export function AppLayout() {
         ]} />
       </div>
       <Space className="topbar-right" size={20}>
-        <Tooltip title="Chưa có điểm quét được gán cho trạm này.">
-          <span className="station-status" role="status" aria-label="Điểm quét hiện tại: Chưa gán điểm quét">
+        <Tooltip title={pointTooltip}>
+          <span className="station-status" role="status" aria-live="polite" aria-busy={assignment.loading} aria-label={`Điểm quét được phân công: ${pointLabel}`}>
             <EnvironmentOutlined aria-hidden="true" />
-            <span className="station-status-copy"><small>Điểm quét</small><strong>Chưa gán điểm quét</strong></span>
+            <span className="station-status-copy"><small>{assignment.points.length > 1 && !ambiguous ? 'Điểm quét được cấp' : 'Điểm quét'}</small><strong>{pointLabel}</strong></span>
+            {!!assignment.error && <Button type="text" size="small" icon={<ReloadOutlined />} aria-label="Tải lại điểm quét được phân công" onClick={assignment.reload} />}
           </span>
         </Tooltip>
         <Dropdown trigger={['click']} menu={{ items: [
