@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env*
 !.env.example
+!.env.lan.example
 playwright-report/
 test-results/
 .sites-runtime/

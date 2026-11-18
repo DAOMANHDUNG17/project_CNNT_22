@@ -21,7 +21,7 @@ describe('RolesGuard', () => {
       switchToHttp: () => ({
         getRequest: () => ({ user: role ? { role } : undefined }),
       }),
-    } as ExecutionContext;
+    } as unknown as ExecutionContext;
   }
 
   it('allows authenticated VIEWER when no role is declared', () => {

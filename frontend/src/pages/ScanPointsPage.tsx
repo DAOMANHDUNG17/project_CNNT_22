@@ -1,6 +1,5 @@
 import { useCallback, useState } from 'react';
 import { Button, Card, Descriptions, Modal } from 'antd';
-import { EnvironmentOutlined } from '@ant-design/icons';
 import { listDatabaseScanPoints } from '../lib/api';
 import type { DatabaseScanPoint, Page } from '../lib/api';
 import { useResource } from '../hooks/useResource';
@@ -19,7 +18,6 @@ export default function ScanPointsPage() {
 
   return <div className="page-enter">
     <PageHeading title="Quản lý điểm quét" action={<RefreshButton onClick={resource.reload} loading={resource.loading} />} />
-    <div className="station-banner"><span className="station-banner-icon"><EnvironmentOutlined /></span><div><h2>Danh sách điểm quét</h2><p>Đây là các điểm quét trong database. Chưa có ánh xạ tin cậy giữa điểm quét và trạm đang sử dụng.</p></div><Tagline /></div>
     <Card className="content-card">
       <ErrorNotice error={resource.error} retry={resource.reload} />
       <DataTable<DatabaseScanPoint> rowKey="scan_point_id" page={page} loading={resource.loading}
@@ -40,5 +38,3 @@ export default function ScanPointsPage() {
     </Modal>
   </div>;
 }
-
-function Tagline() { return <div className="station-banner-meta">QUẢN TRỊ VIÊN<br /><strong>Danh sách từ backend</strong></div>; }

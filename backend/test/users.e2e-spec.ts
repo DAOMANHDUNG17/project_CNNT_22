@@ -19,7 +19,7 @@ describe('Users ADMIN HTTP contract (isolated doubles)', () => {
   const row = { user_id: '9007199254740993', auth_user_id: authId, ...body, password: undefined, is_active: true, created_at: new Date(), updated_at: new Date() };
   beforeAll(async () => {
     const module = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(DatabaseService).useValue({ query, transaction: (fn: (query: typeof query) => unknown) => fn(query) })
+      .overrideProvider(DatabaseService).useValue({ query, transaction: (fn: (execute: typeof query) => unknown) => fn(query) })
       .overrideProvider(JwtVerifierService).useValue({ verify })
       .overrideProvider(SupabaseAdminService).useValue({ create, remove }).compile();
     app = module.createNestApplication(); app.setGlobalPrefix('api');

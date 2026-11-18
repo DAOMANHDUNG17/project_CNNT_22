@@ -13,6 +13,7 @@ import type { StockOutRequest, StockOutResult } from '../lib/stock-movements-api
 import { loadPendingStockOut, savePendingStockOut } from '../lib/pendingStockOut';
 import { ApiError } from '../lib/api-types';
 import { errorMessage } from '../lib/format';
+import { newTransactionId } from '../lib/transaction-id';
 
 export default function StockOutPanel() {
   const { user } = useAuth();
@@ -65,10 +66,11 @@ export default function StockOutPanel() {
       message.error('Chọn điểm quét, mã quét hợp lệ và kiểm tra đủ tồn trước khi xác nhận.');
       return;
     }
-    const payload: StockOutRequest = pending ?? {
-      transaction_id: crypto.randomUUID(), scan_code: code,
-      scan_point_id: point!.scan_point_id, movement_type: 'OUT', quantity_packages: quantityPackages!,
-    };
+    let payload: StockOutRequest;
+    try {
+      payload = pending ?? { transaction_id: newTransactionId(), scan_code: code,
+        scan_point_id: point!.scan_point_id, movement_type: 'OUT', quantity_packages: quantityPackages! };
+    } catch (error) { setSubmitError(error); return; }
     submitGate.current = true;
     setBusy(true);
     setSubmitError(undefined);
@@ -134,7 +136,7 @@ export default function StockOutPanel() {
         { key: 'current', label: 'Tồn hiện tại (tham khảo)', children: <ExactNumber value={stock.quantity_base} unit={product.base_unit} /> },
         { key: 'remove', label: 'Dự kiến xuất', children: amount === null ? 'Số lượng không hợp lệ' : <ExactNumber value={amount.toString()} unit={product.base_unit} /> },
         { key: 'expected', label: 'Tồn dự kiến còn lại (tham khảo)', children: expected === null ? 'Không đủ tồn' : <ExactNumber value={expected} unit={product.base_unit} /> },
-      ]} /><Typography.Paragraph type="secondary" style={{ marginTop: 12 }}>Tồn thực tế được backend kiểm tra lại khi xác nhận; số xem trước có thể thay đổi.</Typography.Paragraph></Card>}
+      ]} /></Card>}
       {validPreview && quantityValid && !sufficient && !pending && <Alert type="warning" showIcon title="Không đủ tồn kho để xuất." style={{ marginTop: 16 }} />}
       {submitError != null && <Alert type="error" showIcon title={errorMessage(submitError)} style={{ marginTop: 16 }} />}
       {completed && <Alert type="success" showIcon title="Đã xuất kho" description={<Descriptions column={1} items={[

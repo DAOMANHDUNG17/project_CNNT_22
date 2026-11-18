@@ -28,20 +28,21 @@ describe('POST /api/stock-movements (e2e with transactional database fake)', () 
   let verify: jest.Mock;
   let role: string;
   let userId: string;
+  let userActive: boolean;
   let assignedIds: string[];
 
   beforeEach(async () => {
     stock = '100'; history = new Map(); factor = 24; productActive = true;
     pointActive = true; pointMissing = false; inventoryMissing = false;
     insertFailure = false; updateFailure = false; unitCode = payload.scan_code; role = 'STAFF'; userId = '42';
-    assignedIds = ['SCAN-01'];
+    assignedIds = ['SCAN-01']; userActive = true;
     verify = jest.fn().mockResolvedValue(actor.auth_user_id);
     query = jest.fn(async (sql: string, args: unknown[] = []) => {
       if (sql.startsWith('SELECT pg_advisory_xact_lock')) return [{}];
       if (sql.includes('FROM public.user_scan_point_access')) return assignedIds.map(scan_point_id => ({ scan_point_id }));
-      if (sql.includes('FROM public.users') && !sql.includes('FOR SHARE')) return [{ ...actor, user_id: userId, role }];
+      if (sql.includes('FROM public.users') && !sql.includes('FOR SHARE')) return [{ ...actor, user_id: userId, role, is_active: userActive }];
       if (sql.startsWith('SELECT t.transaction_id')) {
-        const row = history.get(String(args[0]));
+        const row = history.get(String(args[0]).toLowerCase());
         return row ? [{ ...row, product_name: 'Bút mực', unit_name: 'Hộp' }] : [];
       }
       if (sql.startsWith('SELECT product_id, product_unit_id FROM public.product_units')) {
@@ -51,7 +52,7 @@ describe('POST /api/stock-movements (e2e with transactional database fake)', () 
       if (sql.includes('FROM public.inventory') && sql.includes('FOR UPDATE')) return inventoryMissing ? [] : [{ quantity_base: stock }];
       if (sql.includes('FROM public.product_units') && sql.includes('FOR UPDATE')) return [{ product_id: 'SP013', product_unit_id: '29', unit_name: 'Hộp', scan_code: unitCode, conversion_factor: factor }];
       if (sql.includes('FROM public.scan_points')) return pointMissing ? [] : [{ is_active: pointActive }];
-      if (sql.includes('FROM public.users') && sql.includes('FOR SHARE')) return [{ role, is_active: true }];
+      if (sql.includes('FROM public.users') && sql.includes('FOR SHARE')) return [{ role, is_active: userActive }];
       if (sql.startsWith('UPDATE public.inventory')) {
         if (updateFailure) throw new Error('private database error');
         stock = String(args[1]);
@@ -59,14 +60,15 @@ describe('POST /api/stock-movements (e2e with transactional database fake)', () 
       }
       if (sql.startsWith('INSERT INTO public.stock_transactions')) {
         if (insertFailure) throw new Error('private database error');
-        if (history.has(String(args[0]))) throw { code: '23505' };
+        const transactionId = String(args[0]).toLowerCase();
+        if (history.has(transactionId)) throw { code: '23505' };
         const row = {
-          transaction_id: args[0], product_id: args[1], product_unit_id: args[2], scan_point_id: args[3],
+          transaction_id: transactionId, product_id: args[1], product_unit_id: args[2], scan_point_id: args[3],
           user_id: args[4], movement_type: args[5], quantity_packages: args[6], conversion_factor_snapshot: args[7],
           inventory_before: args[8], inventory_after: args[9], scan_code_snapshot: args[10], quantity_base: String(BigInt(String(args[6])) * BigInt(String(args[7]))),
           created_at: new Date('2026-01-01T00:00:00Z'),
         };
-        history.set(String(args[0]), row);
+        history.set(transactionId, row);
         return [row];
       }
       throw new Error(`Unexpected SQL in test: ${sql.slice(0, 30)}`);
@@ -95,7 +97,9 @@ describe('POST /api/stock-movements (e2e with transactional database fake)', () 
     expect(operation?.security).toEqual([{ bearer: [] }]);
     expect(operation?.requestBody).toBeDefined();
     expect(document.components?.schemas?.CreateStockMovementDto).toMatchObject({ properties: { movement_type: { enum: ['IN', 'OUT'] } } });
-    expect(operation?.responses?.[201]?.content?.['application/json']?.schema?.properties?.data?.properties?.movement_type?.enum).toEqual(['IN', 'OUT']);
+    expect(operation?.responses?.[201]).toHaveProperty(
+      ['content', 'application/json', 'schema', 'properties', 'data', 'properties', 'movement_type', 'enum'], ['IN', 'OUT'],
+    );
     for (const status of [200, 201, 400, 401, 403, 404, 409, 500]) {
       expect(operation?.responses?.[status]).toBeDefined();
     }
@@ -148,6 +152,112 @@ describe('POST /api/stock-movements (e2e with transactional database fake)', () 
     const two = await post(app, { ...payload, transaction_id: '550e8400-e29b-41d4-a716-446655440001', movement_type: 'OUT' }).expect(201);
     expect(two.body.data).toMatchObject({ quantity_base: '24', inventory_before: '24', inventory_after: '0' });
     expect(stock).toBe('0'); expect(history.size).toBe(2);
+  });
+
+  it('KT1 records a valid multi-package IN/OUT pair with exact identities, snapshots and restored stock', async () => {
+    const incoming = { ...payload, quantity_packages: 3 };
+    const outgoing = { ...incoming, transaction_id: '550e8400-e29b-41d4-a716-446655440001', movement_type: 'OUT' };
+    const identity = { product_id: 'SP013', product_unit_id: '29', user_id: '42',
+      scan_point_id: 'SCAN-01', scan_code_snapshot: payload.scan_code,
+      quantity_packages: 3, conversion_factor_snapshot: 24, quantity_base: '72' };
+
+    const createdIn = await post(app, incoming).expect(201);
+    expect(createdIn.body.data).toMatchObject({ ...identity, transaction_id: incoming.transaction_id,
+      movement_type: 'IN', inventory_before: '100', inventory_after: '172' });
+    expect(stock).toBe('172');
+    expect(history.get(incoming.transaction_id)).toMatchObject({ ...identity, transaction_id: incoming.transaction_id,
+      movement_type: 'IN', inventory_before: '100', inventory_after: '172' });
+
+    const createdOut = await post(app, outgoing).expect(201);
+    expect(createdOut.body.data).toMatchObject({ ...identity, transaction_id: outgoing.transaction_id,
+      movement_type: 'OUT', inventory_before: '172', inventory_after: '100' });
+    expect(stock).toBe('100');
+    expect(history.size).toBe(2);
+    expect(history.get(outgoing.transaction_id)).toMatchObject({ ...identity, transaction_id: outgoing.transaction_id,
+      movement_type: 'OUT', inventory_before: '172', inventory_after: '100' });
+    expect(transaction).toHaveBeenCalledTimes(2);
+  });
+
+  it('KT2 uses the same lock identity for uppercase and lowercase forms of one UUID', async () => {
+    const lowerId = 'abcdefab-1234-4abc-8def-1234567890ab';
+    const body = { ...payload, transaction_id: lowerId };
+    await post(app, body).expect(201);
+    const replay = await post(app, { ...body, transaction_id: lowerId.toUpperCase() }).expect(200);
+    expect(replay.body.data.transaction_id).toBe(lowerId);
+    expect(stock).toBe('124'); expect(history.size).toBe(1);
+    const lockIds = query.mock.calls.filter(([sql]) => String(sql).startsWith('SELECT pg_advisory_xact_lock')).map(([, args]) => args[0]);
+    expect(lockIds).toEqual([lowerId, lowerId]);
+  });
+
+  it('KT2 exact replay returns the original snapshot without inventory or history DML', async () => {
+    const body = { ...payload, quantity_packages: 3 };
+    const created = await post(app, body).expect(201);
+    const saved = structuredClone(history.get(id));
+    query.mockClear();
+    const replay = await post(app, body).expect(200);
+    expect(replay.body).toEqual(created.body);
+    expect(stock).toBe('172'); expect(history.size).toBe(1);
+    expect(history.get(id)).toEqual(saved);
+    expect(query.mock.calls.filter(([sql]) => /^(UPDATE|INSERT|DELETE|TRUNCATE)\b/iu.test(String(sql)))).toHaveLength(0);
+  });
+
+  it('KT2 treats distinct UUIDs with the same payload as separate movements', async () => {
+    const first = await post(app).expect(201);
+    const secondId = '550e8400-e29b-41d4-a716-446655440001';
+    const second = await post(app, { ...payload, transaction_id: secondId }).expect(201);
+    expect(first.body.data.transaction_id).toBe(id);
+    expect(second.body.data.transaction_id).toBe(secondId);
+    expect(stock).toBe('148'); expect(history.size).toBe(2);
+  });
+
+  it.each(['product_id', 'product_unit_id'])('KT2 rejects changing %s directly on an existing UUID', async field => {
+    await post(app).expect(201);
+    query.mockClear();
+    await post(app, { ...payload, [field]: 'OTHER' }).expect(400);
+    expect(stock).toBe('124'); expect(history.size).toBe(1);
+    expect(query.mock.calls.filter(([sql]) => /^(UPDATE|INSERT)\b/iu.test(String(sql)))).toHaveLength(0);
+  });
+
+  it.each([
+    { quantity_packages: 2 }, { movement_type: 'OUT' },
+    { scan_code: 'OTHER-UNIT-CODE' }, { scan_code: 'OTHER-PRODUCT-CODE' },
+  ])('KT2 conflicting replay does not write or expose the original movement: %p', async changed => {
+    await post(app).expect(201);
+    const saved = structuredClone(history.get(id));
+    query.mockClear();
+    const response = await post(app, { ...payload, ...changed }).expect(409);
+    expect(response.body.data).toBeUndefined();
+    expect(stock).toBe('124'); expect(history.size).toBe(1);
+    expect(history.get(id)).toEqual(saved);
+    expect(query.mock.calls.filter(([sql]) => /^(UPDATE|INSERT)\b/iu.test(String(sql)))).toHaveLength(0);
+  });
+
+  it.each(['missing-token', 'invalid-token', 'viewer', 'inactive'])('KT2 applies authentication and role checks before replay: %s', async variant => {
+    await post(app).expect(201);
+    query.mockClear();
+    if (variant === 'invalid-token') verify.mockRejectedValueOnce(new Error('invalid JWT'));
+    if (variant === 'viewer') role = 'VIEWER';
+    if (variant === 'inactive') userActive = false;
+    const pendingRequest = variant === 'missing-token'
+      ? request(app.getHttpServer()).post('/api/stock-movements').send(payload) : post(app);
+    const response = await pendingRequest.expect(variant.endsWith('token') ? 401 : 403);
+    expect(response.body.data).toBeUndefined();
+    expect(stock).toBe('124'); expect(history.size).toBe(1);
+    expect(query.mock.calls.some(([sql]) => String(sql).startsWith('SELECT t.transaction_id'))).toBe(false);
+    expect(query.mock.calls.filter(([sql]) => /^(UPDATE|INSERT)\b/iu.test(String(sql)))).toHaveLength(0);
+  });
+
+  it.each(['original', 'revoked', 'other-user'])('KT2 reauthorizes the unique-key fallback: %s', async variant => {
+    await post(app).expect(201);
+    query.mockClear();
+    transaction.mockRejectedValueOnce({ code: '23505' });
+    if (variant === 'revoked') assignedIds = [];
+    if (variant === 'other-user') userId = '43';
+    const response = await post(app).expect(variant === 'original' ? 200 : variant === 'revoked' ? 403 : 409);
+    if (variant !== 'original') expect(response.body.data).toBeUndefined();
+    expect(stock).toBe('124'); expect(history.size).toBe(1);
+    expect(query.mock.calls.filter(([sql]) => /^(UPDATE|INSERT)\b/iu.test(String(sql)))).toHaveLength(0);
+    if (variant === 'revoked') expect(query.mock.calls.some(([sql]) => String(sql).startsWith('SELECT t.transaction_id'))).toBe(false);
   });
 
   it('uses editable package counts for IN and OUT and binds count to UUID replay', async () => {

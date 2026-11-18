@@ -1,8 +1,9 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import type { Plugin } from 'vite';
 import { readFileSync } from 'node:fs';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
+import { isLanMode, lanServerOptions, lanTlsDenyFiles } from './config/lan';
 
 // Package the retired API contract as read-only reference material.
 function documentationAssets(): Plugin {
@@ -25,19 +26,23 @@ function documentationAssets(): Plugin {
     },
   };
 }
-export default defineConfig({
+export default defineConfig(({ mode, command }) => ({
   plugins: [react(), documentationAssets()],
-  server: { host: '127.0.0.1', port: 5173, strictPort: true, fs: {
+  ...(isLanMode(mode) ? { define: { 'import.meta.env.VITE_API_URL': JSON.stringify('/api') } } : {}),
+  server: { host: '127.0.0.1', port: 5173, strictPort: true,
+    ...(isLanMode(mode) && command === 'serve' ? lanServerOptions(mode, loadEnv('lan', fileURLToPath(new URL('.', import.meta.url)), 'LAN_TEST_'), fileURLToPath(new URL('.', import.meta.url))) : {}),
+    fs: {
     allow: [
       fileURLToPath(new URL('.',import.meta.url)),
       fileURLToPath(new URL('../docs',import.meta.url)),
       fileURLToPath(new URL('../node_modules',import.meta.url)),
     ],
-    deny: ['.env','.env.*','**/*-password.txt','**/tests/**','**/scripts/**','**/test-results/**'],
+    deny: ['.env','.env.*','**/*-password.txt','**/tests/**','**/scripts/**','**/test-results/**','**/.certs/**','**/*.pem','**/*.key','**/*.crt','**/*.pfx','**/*.p12',
+      ...lanTlsDenyFiles(loadEnv('lan', fileURLToPath(new URL('.', import.meta.url)), 'LAN_TEST_'), fileURLToPath(new URL('.', import.meta.url)))],
   } },
   preview: { host: '127.0.0.1', port: 5173, strictPort: true },
   build: { sourcemap: false, rollupOptions: { input: {
     app: fileURLToPath(new URL('./index.html', import.meta.url)),
     swagger: fileURLToPath(new URL('./swagger/index.html', import.meta.url)),
   } } },
-});
+}));

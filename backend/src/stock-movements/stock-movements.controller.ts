@@ -16,8 +16,8 @@ const responseSchema = {
       product_unit_id: { type: 'string' }, unit_name: { type: 'string' }, scan_code_snapshot: { type: 'string' },
       scan_point_id: { type: 'string' }, user_id: { type: 'string' }, movement_type: { type: 'string', enum: ['IN', 'OUT'] },
       quantity_packages: { type: 'integer', example: 2 }, conversion_factor_snapshot: { type: 'integer', example: 24 },
-      quantity_base: { type: 'string', example: '24' }, inventory_before: { type: 'string', example: '100' },
-      inventory_after: { type: 'string', example: '124' }, created_at: { type: 'string', format: 'date-time' },
+      quantity_base: { type: 'string', example: '48' }, inventory_before: { type: 'string', example: '100' },
+      inventory_after: { type: 'string', example: '148' }, created_at: { type: 'string', format: 'date-time' },
     },
   } },
 };
