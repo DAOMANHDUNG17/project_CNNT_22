@@ -11,6 +11,9 @@
   },
   "scripts": {
     "dev": "npm --prefix frontend run dev",
+    "dev:lan": "npm --prefix frontend run dev:lan",
+    "dev:lan:https": "npm --prefix frontend run dev:lan:https",
+    "lan:help": "npm --prefix frontend run lan:help",
     "typecheck": "npm --prefix frontend run typecheck",
     "build": "npm --prefix frontend run build",
     "test": "npm --prefix frontend run test",

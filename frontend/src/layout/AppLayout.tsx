@@ -62,13 +62,16 @@ function AppLayoutContent() {
             {!!assignment.error && <Button type="text" size="small" icon={<ReloadOutlined />} aria-label="Tải lại điểm quét được phân công" onClick={assignment.reload} />}
           </span>
         </Tooltip>
-        <Dropdown trigger={['click']} menu={{ items: [
+        {/* Position this menu locally so pending popup alignment cannot hide account access. */}
+        <span className="account-menu-anchor"><Dropdown trigger={['click']} placement="bottomRight" transitionName=""
+          getPopupContainer={trigger => trigger.parentElement!}
+          styles={{ root: { position: 'absolute', top: 'calc(100% + 4px)', right: 0, bottom: 'auto', left: 'auto' } }} menu={{ items: [
           { key: 'identity', label: <span className="account-menu-identity"><strong>{user?.display_name}</strong><small>{user && roleLabels[user.role]}</small></span>, disabled: true },
           { type: 'divider' },
           { key: 'logout', label: 'Đăng xuất', icon: <LogoutOutlined />, disabled: mutation.busy },
         ], onClick: ({ key }) => { if (key === 'logout') void mutation.run(logout, 'Đã đăng xuất.', () => navigate('/login')); } }}>
           <Button type="text" className="profile-button" aria-label="Menu tài khoản"><Avatar className="user-avatar">{user?.display_name.slice(0,1).toUpperCase()}</Avatar><span className="profile-copy"><strong>{user?.display_name}</strong><small>{user && roleLabels[user.role]}</small></span><DownOutlined /></Button>
-        </Dropdown>
+        </Dropdown></span>
       </Space>
     </header>
       <main id="main-content" className="main-content" tabIndex={-1}><Outlet /></main>

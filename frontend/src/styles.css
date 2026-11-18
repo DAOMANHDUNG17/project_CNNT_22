@@ -41,6 +41,7 @@ h1, h2, h3 { color: var(--sw-heading); }
 .station-status-copy small { font-size: 10px; }
 .station-status-copy strong { font-size: 11px; color: var(--sw-heading); font-weight: 600; max-width: min(180px, 40vw); overflow: hidden; text-overflow: ellipsis; }
 .mobile-menu-button.ant-btn { display: none; }
+.account-menu-anchor { position: relative; display: inline-flex; }
 .profile-button.ant-btn { height: 46px; padding: 0; gap: 10px; }
 .user-avatar.ant-avatar { background: var(--sw-tint); color: var(--sw-primary); border: 1px solid var(--sw-border); font-weight: 600; }
 .profile-copy { display: flex; flex-direction: column; text-align: left; gap: 3px; }

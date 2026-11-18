@@ -8,7 +8,7 @@ import type { Trend } from '../lib/api';
 import { useResource } from '../hooks/useResource';
 import { useAuth } from '../auth/AuthProvider';
 import { integer, timestamp } from '../lib/format';
-import { DataTable, ErrorNotice, ExactNumber, MovementTag, PageHeading, PanelTitle, RefreshButton } from '../components/Common';
+import { DataTable, ErrorNotice, MovementTag, PageHeading, PanelTitle, RefreshButton } from '../components/Common';
 import { TrendChart } from '../components/TrendChart';
 
 const utcToday = () => new Date().toISOString().slice(0,10);
@@ -28,10 +28,7 @@ export default function DashboardPage() {
       { label: 'Giao dịch đã ghi nhận', value: data?.transactions.total, sub: data ? `${integer(data.transactions.IN)} nhập · ${integer(data.transactions.OUT)} xuất` : 'Toàn bộ lịch sử', icon: <HistoryOutlined />, className: 'blue', link: '/transactions' },
       { label: 'Sản phẩm dưới ngưỡng', value: data?.low_stock.product_count, sub: 'Tồn < 10 đơn vị cơ sở / sản phẩm', icon: <WarningOutlined />, className: 'amber', link: '/inventory?tab=low-stock' },
     ].map(stat => <Col xs={24} md={8} key={stat.label}><Card className={`stat-card ${stat.className}`}><div className="stat-top"><span>{stat.label}</span><span className="stat-icon">{stat.icon}</span></div>{dashboard.loading ? <Skeleton.Input active size="small" /> : <div className="stat-value">{stat.value === undefined ? '—' : integer(stat.value)}</div>}<div className="stat-bottom"><span>{stat.sub}</span><Link to={stat.link} aria-label={`Xem ${stat.label}`}><ArrowUpOutlined rotate={45} /></Link></div></Card></Col>)}</Row>
-    <section className="unit-totals"><PanelTitle title="Tồn kho theo đơn vị" description="Theo từng đơn vị cơ sở · Không cộng gộp các đơn vị khác loại" extra={<Link to="/inventory">Xem tồn kho <ArrowRightOutlined /></Link>} />
-      {dashboard.loading ? <Skeleton active paragraph={{ rows: 1 }} /> : <div className="unit-total-list">{data?.inventory_totals.map(item => <div className="unit-total" key={item.base_unit}><span className="unit-dot" /><div><span className="unit-label">{item.base_unit}</span><ExactNumber value={item.quantity_base} /></div></div>)}{data && data.inventory_totals.length === 0 && <span className="muted">Chưa có bản ghi tồn kho.</span>}</div>}
-      {data && data.products.missing_inventory !== '0' && <Alert type="warning" showIcon title={`${integer(data.products.missing_inventory)} sản phẩm chưa có bản ghi tồn kho; không được tính là tồn 0.`} />}
-    </section>
+    {data && data.products.missing_inventory !== '0' && <Alert type="warning" showIcon title={`${integer(data.products.missing_inventory)} sản phẩm chưa có bản ghi tồn kho; không được tính là tồn 0.`} style={{ marginBottom: 24 }} />}
     <div className="analytics-grid"><Card className="content-card chart-card"><PanelTitle title="Nhịp hoạt động kho" description="Số lượt giao dịch nhập và xuất — không cộng số lượng của các đơn vị khác nhau" extra={<><Select aria-label="Nhóm biểu đồ" value={granularity} onChange={setGranularity} options={[{value:'day',label:'Theo ngày'},{value:'month',label:'Theo tháng'}]} /><DatePicker.RangePicker allowClear={false} value={[dayjs(range.from),dayjs(range.to)]} format="DD/MM/YYYY" onChange={values => { if(values?.[0] && values[1]) { setRange({from: values[0].format('YYYY-MM-DD'),to: values[1].format('YYYY-MM-DD')}); setTopPage(p=>({...p,page:1})); } }} disabledDate={current => current.isBefore('0001-01-01')} /></>} />
       {dashboard.loading ? <Skeleton active paragraph={{rows:5}} /> : dashboard.data && <TrendChart rows={dashboard.data.trends} granularity={granularity} />}
       <details className="chart-details"><summary>Xem bảng số liệu chính xác · UTC</summary><Table<Trend> rowKey="period_start" size="small" scroll={{x:'max-content'}} pagination={{pageSize:10}} dataSource={dashboard.data?.trends ?? []} columns={[

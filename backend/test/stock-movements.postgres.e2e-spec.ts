@@ -90,6 +90,10 @@ describePostgres('POST /api/stock-movements with isolated PostgreSQL', () => {
       BEGIN IF NEW.transaction_id = '10000000-0000-4000-8000-000000009999'::uuid THEN RAISE EXCEPTION 'QA forced history failure'; END IF; RETURN NEW; END $$;
       DROP TRIGGER IF EXISTS qa_fail_history ON stock_transactions;
       CREATE TRIGGER qa_fail_history BEFORE INSERT ON stock_transactions FOR EACH ROW EXECUTE FUNCTION qa_fail_history_insert();
+      CREATE OR REPLACE FUNCTION qa_touch_inventory_updated_at() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN NEW.updated_at = clock_timestamp(); RETURN NEW; END $$;
+      DROP TRIGGER IF EXISTS qa_touch_inventory ON inventory;
+      CREATE TRIGGER qa_touch_inventory BEFORE UPDATE ON inventory FOR EACH ROW EXECUTE FUNCTION qa_touch_inventory_updated_at();
     `);
 
     const module = await Test.createTestingModule({ imports: [AppModule] })
@@ -188,6 +192,44 @@ describePostgres('POST /api/stock-movements with isolated PostgreSQL', () => {
     const [state] = await sql.unsafe("SELECT (SELECT quantity_base FROM inventory WHERE product_id='P1') quantity, (SELECT count(*) FROM stock_transactions) count");
     expect(String(state.quantity)).toBe('100');
     expect(String(state.count)).toBe('0');
+  });
+
+  it('KT2 replay preserves inventory updated_at and the original response', async () => {
+    const body = { ...basePayload, transaction_id: uuid('120'), quantity_packages: 2 };
+    const created = await post(body, 'staff-token').expect(201);
+    const [before] = await sql.unsafe("SELECT quantity_base::text,updated_at::text FROM inventory WHERE product_id='P1'");
+    const replay = await post(body, 'staff-token').expect(200);
+    const [after] = await sql.unsafe("SELECT quantity_base::text,updated_at::text FROM inventory WHERE product_id='P1'");
+    expect(replay.body).toEqual(created.body);
+    expect(before.quantity_base).toBe('148');
+    expect(after).toEqual(before);
+    expect((await sql.unsafe('SELECT count(*)::int AS count FROM stock_transactions WHERE transaction_id=$1', [body.transaction_id]))[0].count).toBe(1);
+  });
+
+  it('KT2 concurrent uppercase/lowercase UUID requests create one movement', async () => {
+    const id = 'abcdefab-1234-4abc-8def-1234567890ab';
+    const results = await Promise.all([
+      post({ ...basePayload, transaction_id: id }, 'staff-token'),
+      post({ ...basePayload, transaction_id: id.toUpperCase() }, 'staff-token'),
+    ]);
+    expect(results.map(result => result.status).sort()).toEqual([200, 201]);
+    expect(results.every(result => result.body.data.transaction_id === id)).toBe(true);
+    const [state] = await sql.unsafe("SELECT (SELECT quantity_base::text FROM inventory WHERE product_id='P1') AS quantity,(SELECT count(*)::int FROM stock_transactions WHERE transaction_id=$1) AS count", [id]);
+    expect(state).toMatchObject({ quantity: '124', count: 1 });
+  });
+
+  it.each([
+    { quantity_packages: 2 }, { movement_type: 'OUT' },
+    { scan_code: 'ODD-BASE-X' }, { scan_code: 'LOCK-BOX' },
+  ])('KT2 rejects a reused UUID with changed count/type/unit/product: %p', async changed => {
+    const body = { ...basePayload, transaction_id: uuid('121') };
+    await post(body, 'staff-token').expect(201);
+    const [before] = await sql.unsafe("SELECT quantity_base::text,updated_at::text FROM inventory WHERE product_id='P1'");
+    await post({ ...body, ...changed }, 'staff-token').expect(409);
+    const [after] = await sql.unsafe("SELECT quantity_base::text,updated_at::text FROM inventory WHERE product_id='P1'");
+    expect(after).toEqual(before);
+    expect((await sql.unsafe('SELECT count(*)::int AS count FROM stock_transactions'))[0].count).toBe(1);
+    expect(String((await sql.unsafe("SELECT quantity_base FROM inventory WHERE product_id='PLOCK'"))[0].quantity_base)).toBe('0');
   });
 
   it('replays exact UUID once and rejects changed code, point or authenticated user', async () => {

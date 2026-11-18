@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
-import { Alert, App, Avatar, Button, Card, Checkbox, Form, Input, Modal, Popconfirm, Select, Space, Tag } from 'antd';
-import { PlusOutlined, SearchOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
+import { App, Avatar, Button, Card, Checkbox, Form, Input, Modal, Popconfirm, Select, Space, Tag } from 'antd';
+import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { createDatabaseUser, listDatabaseUsers, updateDatabaseUser } from '../lib/users-api';
 import type { CreateManagedUser, ManagedRole, ManagedUser, PatchManagedUser } from '../lib/users-api';
 import { useAuth } from '../auth/AuthProvider';
@@ -80,8 +80,6 @@ export default function UsersPage() {
   return <div className="page-enter">
     <PageHeading title="Quản lý người dùng" action={<Space wrap><RefreshButton onClick={resource.reload} loading={resource.loading} />
       <Button type="primary" icon={<PlusOutlined aria-hidden />} onClick={() => edit(null)} disabled={mutation.busy}>Thêm người dùng</Button></Space>} />
-    <Alert className="role-banner" type="info" showIcon icon={<SafetyCertificateOutlined />} title="Quyền quản trị tài khoản"
-      description="Quyền và trạng thái được kiểm tra ở mỗi yêu cầu. Hệ thống luôn giữ ít nhất một ADMIN hoạt động. Tài khoản mới đăng nhập bằng email." />
     <Card className="content-card"><div className="table-toolbar">
       <Input aria-label="Tìm người dùng" prefix={<SearchOutlined />} placeholder="Tìm tài khoản, tên hoặc email…" maxLength={150} allowClear value={search} onChange={event => { setSearch(event.target.value); resetPage(); }} />
       <Space wrap><Select aria-label="Lọc vai trò" placeholder="Mọi vai trò" style={{ minWidth: 170 }} allowClear value={role} options={roleOptions} onChange={value => { setRole(value); resetPage(); }} />

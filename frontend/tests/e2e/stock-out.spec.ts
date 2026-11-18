@@ -8,6 +8,7 @@ const storageKey = supabaseUrl && `sb-${new URL(supabaseUrl).hostname.split('.')
 
 async function setup(page: import('@playwright/test').Page, role: 'ADMIN' | 'STAFF' | 'VIEWER' = 'STAFF', initialStock = '48') {
   test.skip(!storageKey, 'Supabase URL is needed for the isolated browser session');
+  await page.addInitScript(() => { Object.defineProperty(Crypto.prototype, 'randomUUID', { configurable: true, value: undefined }); });
   await page.addInitScript(({ key }) => {
     localStorage.setItem(key, JSON.stringify({ access_token: 'out-e2e-token', refresh_token: 'out-e2e-refresh', token_type: 'bearer',
       expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600,

@@ -14,6 +14,7 @@ async function preparePoint(page: import('@playwright/test').Page) {
 
 async function setup(page: import('@playwright/test').Page, role: 'ADMIN' | 'STAFF' | 'VIEWER' = 'STAFF') {
   test.skip(!storageKey, 'Supabase URL is needed for the local test session');
+  await page.addInitScript(() => { Object.defineProperty(Crypto.prototype, 'randomUUID', { configurable: true, value: undefined }); });
   await page.addInitScript(({ key }) => {
     localStorage.setItem(key, JSON.stringify({
       access_token: 'local-e2e-access-token', refresh_token: 'local-e2e-refresh-token', token_type: 'bearer',
@@ -144,6 +145,40 @@ test('assignment change 403 refreshes locked context, preserves pending UUID/poi
   await page.getByRole('textbox', { name: 'Mã quét', exact: true }).fill('BOX-ABC'); await page.getByRole('button', { name: 'Xác nhận nhập kho' }).click();
   await expect(page.getByText('Đã nhập kho', { exact: true })).toBeVisible();
   expect(bodies[1]!.scan_point_id).toBe('SCAN-02'); expect(bodies[1]!.transaction_id).not.toBe(bodies[0]!.transaction_id);
+});
+
+test('KT2 retry after a committed IN response is lost keeps one movement across reload', async ({ page }) => {
+  const db = await setup(page);
+  const requests: Array<Record<string, unknown>> = [];
+  const committed = new Map<string, { data: Record<string, unknown> }>();
+  await page.route('**/api/stock-movements', route => {
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    requests.push(body);
+    const id = String(body.transaction_id);
+    const fresh = !committed.has(id);
+    if (fresh) {
+      const before = 100 + committed.size * 24;
+      committed.set(id, { data: { ...body, product_id: 'SP013', product_name: 'Bút mực', unit_name: 'Hộp',
+        quantity_packages: 1, conversion_factor_snapshot: 24, quantity_base: '24',
+        inventory_before: String(before), inventory_after: String(before + 24) } });
+      db.setInventory(String(before + 24));
+    }
+    // The fake server commits before deliberately losing the first response.
+    if (requests.length === 1) return route.abort('timedout');
+    return route.fulfill({ status: fresh ? 201 : 200, json: committed.get(id) });
+  });
+  await page.goto('/stock-movement');
+  await preparePoint(page);
+  await page.getByRole('textbox', { name: 'Mã quét', exact: true }).fill('BOX-ABC');
+  await page.getByRole('button', { name: 'Xác nhận nhập kho' }).click();
+  await expect(page.getByText('Lượt nhập đang được giữ để thử lại')).toBeVisible();
+  await page.reload();
+  await page.getByRole('button', { name: 'Thử lại lượt nhập' }).click();
+  await expect(page.getByText('Đã nhập kho', { exact: true })).toBeVisible();
+  expect(requests).toHaveLength(2);
+  expect(requests[1]).toEqual(requests[0]);
+  expect(committed.size).toBe(1);
+  await expect(page.getByText('124', { exact: true }).first()).toBeVisible();
 });
 
 test('network failure preserves UUID and freezes inputs for an exact retry', async ({ page }) => {

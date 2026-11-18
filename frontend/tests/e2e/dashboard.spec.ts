@@ -38,7 +38,7 @@ test('Dashboard loads authorized data, filters chart, paginates and refreshes us
   await page.goto('/');
   await expect(page.locator('.stat-card .ant-skeleton').first()).toBeVisible();
   await expect(page.locator('.stat-card').first()).toContainText('2');
-  await expect(page.getByText('9.007.199.254.740.993')).toBeVisible();
+  await expect(page.getByText('Tồn kho theo đơn vị', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('img', { name: /Biểu đồ số lượt nhập/ })).toBeVisible();
   await expect(page.getByText('Paper').first()).toBeVisible();
   await page.getByRole('combobox', { name: 'Nhóm biểu đồ' }).click();

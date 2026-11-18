@@ -30,19 +30,21 @@ export class StockMovementsService {
   constructor(private readonly databaseService: DatabaseService) {}
 
   async create(dto: CreateStockMovementDto, actor: BusinessUser): Promise<{ data: StockMovement; replay: boolean }> {
+    // PostgreSQL UUID equality is case-insensitive; use one identity for locks and storage.
+    const transactionId = dto.transaction_id.toLowerCase();
     try {
       return await this.databaseService.transaction(async (query) => {
         // Serialize attempts sharing a UUID before any inventory lock or write.
         // A hash collision only serializes unrelated requests; the UUID PK remains authoritative.
-        await query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [dto.transaction_id]);
+        await query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [transactionId]);
         const pointId = await this.assignedPoint(query, dto, actor);
-        const replayed = await query(this.historySql(), [dto.transaction_id]);
+        const replayed = await query(this.historySql(), [transactionId]);
         if (replayed[0]) return this.replay(replayed[0], dto, actor, pointId);
 
         // This lookup only locates the product. Recheck the unit after acquiring locks.
         const lookup = await query('SELECT product_id, product_unit_id FROM public.product_units WHERE scan_code = $1', [dto.scan_code]);
         if (!lookup[0]) {
-          const committed = await query(this.historySql(), [dto.transaction_id]);
+          const committed = await query(this.historySql(), [transactionId]);
           if (committed[0]) return this.replay(committed[0], dto, actor, pointId);
           throw new NotFoundException('Không tìm thấy mã quét.');
         }
@@ -56,7 +58,7 @@ export class StockMovementsService {
         const units = await query('SELECT product_unit_id, product_id, unit_name, scan_code, conversion_factor FROM public.product_units WHERE product_unit_id = $1 FOR UPDATE', [String(lookup[0].product_unit_id)]);
         const unit = units[0];
         // A concurrent request for the same product may have committed while we waited.
-        const committed = await query(this.historySql(), [dto.transaction_id]);
+        const committed = await query(this.historySql(), [transactionId]);
         if (committed[0]) return this.replay(committed[0], dto, actor, pointId);
 
         if (!unit || unit.product_id !== productId || unit.scan_code !== dto.scan_code) {
@@ -80,7 +82,7 @@ export class StockMovementsService {
         if (String(updated[0]?.quantity_base) !== after.toString()) throw new Error('Inventory update returned an unexpected value');
         const inserted = await query(
           'INSERT INTO public.stock_transactions (transaction_id, product_id, product_unit_id, scan_point_id, user_id, movement_type, quantity_packages, conversion_factor_snapshot, inventory_before, inventory_after, scan_code_snapshot) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING transaction_id, product_id, product_unit_id, scan_point_id, user_id, movement_type, quantity_packages, conversion_factor_snapshot, quantity_base, inventory_before, inventory_after, scan_code_snapshot, created_at',
-          [dto.transaction_id, productId, String(unit.product_unit_id), pointId, String(actor.user_id), dto.movement_type, dto.quantity_packages, factor, before.toString(), after.toString(), dto.scan_code],
+          [transactionId, productId, String(unit.product_unit_id), pointId, String(actor.user_id), dto.movement_type, dto.quantity_packages, factor, before.toString(), after.toString(), dto.scan_code],
         );
         if (!inserted[0]) throw new Error('Stock transaction insert returned no row');
         return { data: this.toMovement(inserted[0], products[0].product_name as string, unit.unit_name as string), replay: false };
@@ -90,9 +92,9 @@ export class StockMovementsService {
         // A uniqueness fallback must reauthorize under locks just like the normal retry path.
         try {
           return await this.databaseService.transaction(async query => {
-            await query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [dto.transaction_id]);
+            await query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [transactionId]);
             const pointId = await this.assignedPoint(query, dto, actor);
-            const rows = await query(this.historySql(), [dto.transaction_id]);
+            const rows = await query(this.historySql(), [transactionId]);
             if (!rows[0]) throw new ConflictException('Giao dịch đã tồn tại.');
             return this.replay(rows[0], dto, actor, pointId);
           });

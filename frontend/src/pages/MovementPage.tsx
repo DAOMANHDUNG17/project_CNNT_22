@@ -13,6 +13,7 @@ import type { StockInRequest, StockInResult } from '../lib/stock-movements-api';
 import { loadPendingStockIn, savePendingStockIn } from '../lib/pendingStockIn';
 import { errorMessage } from '../lib/format';
 import { ApiError } from '../lib/api-types';
+import { newTransactionId } from '../lib/transaction-id';
 import Kt2Panel from './Kt2Panel';
 import StockOutPanel from './StockOutPanel';
 
@@ -67,10 +68,11 @@ function StockInPanel() {
       message.error('Chọn điểm quét, mã quét và số đơn vị đóng gói hợp lệ trước khi xác nhận.');
       return;
     }
-    const payload: StockInRequest = pending ?? {
-      transaction_id: crypto.randomUUID(), scan_code: code,
-      scan_point_id: point!.scan_point_id, movement_type: 'IN', quantity_packages: quantityPackages!,
-    };
+    let payload: StockInRequest;
+    try {
+      payload = pending ?? { transaction_id: newTransactionId(), scan_code: code,
+        scan_point_id: point!.scan_point_id, movement_type: 'IN', quantity_packages: quantityPackages! };
+    } catch (error) { setSubmitError(error); return; }
     submitGate.current = true;
     setBusy(true);
     setSubmitError(undefined);
@@ -134,7 +136,7 @@ function StockInPanel() {
         { key: 'current', label: 'Tồn hiện tại (tham khảo)', children: <ExactNumber value={stock.quantity_base} unit={product.base_unit} /> },
         { key: 'add', label: 'Dự kiến nhập', children: amount === null ? 'Số lượng không hợp lệ' : <ExactNumber value={amount.toString()} unit={product.base_unit} /> },
         { key: 'expected', label: 'Tồn dự kiến (tham khảo)', children: expected === null ? 'Vượt giới hạn tồn kho' : <ExactNumber value={expected} unit={product.base_unit} /> },
-      ]} /><Typography.Paragraph type="secondary" style={{ marginTop: 12 }}>Tồn thực tế được backend tính khi xác nhận; số xem trước có thể thay đổi.</Typography.Paragraph></Card>}
+      ]} /></Card>}
       {submitError != null && <Alert type="error" showIcon title={errorMessage(submitError)} style={{ marginTop: 16 }} />}
       {completed && <Alert type="success" showIcon title="Đã nhập kho" description={<Descriptions column={1} items={[
         { key: 'transaction', label: 'Mã giao dịch', children: completed.transaction_id },
