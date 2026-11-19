@@ -12,9 +12,12 @@ const payload = { transaction_id: '550e8400-e29b-41d4-a716-446655440000', scan_c
 describe('stock IN client', () => {
   it('sends one package request without client inventory/factor and with bearer JWT', async () => {
     getSession.mockResolvedValue({ data: { session: { access_token: 'session-token' } }, error: null });
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { transaction_id: payload.transaction_id } }), { status: 201 }));
+    const data = { transaction_id: payload.transaction_id };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      message: 'Giao dịch được tạo thành công.', is_duplicate: false, data,
+    }), { status: 201 }));
     vi.stubGlobal('fetch', fetchMock);
-    await createStockIn(payload);
+    expect((await createStockIn(payload)).data).toEqual(data);
     expect(fetchMock).toHaveBeenCalledWith(expect.stringMatching(/\/stock-movements$/), {
       method: 'POST', headers: { Authorization: 'Bearer session-token', 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -46,9 +49,12 @@ describe('stock OUT client', () => {
 
   it('sends only UUID, barcode, point and OUT under bearer JWT', async () => {
     getSession.mockResolvedValue({ data: { session: { access_token: 'session-token' } }, error: null });
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { transaction_id: out.transaction_id } }), { status: 201 }));
+    const data = { transaction_id: out.transaction_id };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      message: 'Giao dịch được tạo thành công.', is_duplicate: false, data,
+    }), { status: 201 }));
     vi.stubGlobal('fetch', fetchMock);
-    await createStockOut(out);
+    expect((await createStockOut(out)).data).toEqual(data);
     expect(fetchMock).toHaveBeenCalledWith(expect.stringMatching(/\/stock-movements$/), {
       method: 'POST', headers: { Authorization: 'Bearer session-token', 'Content-Type': 'application/json' },
       body: JSON.stringify(out),

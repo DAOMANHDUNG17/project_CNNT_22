@@ -3,6 +3,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { App } from 'supertest/types';
+import { apiTags, createApiDocument } from './../src/api-docs';
 import { AppModule } from './../src/app.module';
 import { JwtVerifierService } from './../src/auth/jwt-verifier.service';
 import { DatabaseService } from './../src/database/database.service';
@@ -59,6 +60,42 @@ describe('API (e2e)', () => {
       .get('/api/health/database')
       .expect(200)
       .expect({ status: 'ok', database: 'connected' });
+  });
+
+  it('documents 20 operations in seven groups and hides only the two diagnostic probes', () => {
+    const document = createApiDocument(app);
+    expect(document.tags?.map(tag => tag.name)).toEqual(Object.values(apiTags));
+    expect(document.paths['/api/health/database']).toBeUndefined();
+    expect(document.paths['/api/auth/admin-check']).toBeUndefined();
+    const totals: Record<string, number> = {};
+    const methods = ['get', 'post', 'put', 'patch', 'delete'] as const;
+    for (const entry of Object.values(document.paths)) {
+      for (const method of methods) {
+        const operation = entry[method];
+        if (!operation) continue;
+        expect(operation.tags).toHaveLength(1);
+        const tag = operation.tags![0];
+        totals[tag] = (totals[tag] ?? 0) + 1;
+      }
+    }
+    expect(totals).toEqual({
+      [apiTags.account]: 1,
+      [apiTags.catalog]: 6,
+      [apiTags.inventory]: 2,
+      [apiTags.movements]: 2,
+      [apiTags.history]: 1,
+      [apiTags.scanPoints]: 4,
+      [apiTags.administration]: 4,
+    });
+    const movements = document.paths['/api/stock-movements'].post;
+    expect(movements?.responses).toEqual(expect.objectContaining({
+      200: expect.any(Object), 201: expect.any(Object), 409: expect.any(Object),
+    }));
+    expect(movements?.requestBody).toHaveProperty(['content', 'application/json', 'examples', 'kt2', 'value', 'quantity_packages'], 2);
+    expect(document.paths['/api/stock-movements/replay'].post?.security).toEqual([{ bearer: [] }]);
+    expect(document.paths['/api/transactions'].get?.parameters).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'transactionId', in: 'query' })]),
+    );
   });
 
   it('returns 503 without connection details when the database fails', () => {

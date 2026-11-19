@@ -29,7 +29,11 @@ export interface StockMovement {
 export class StockMovementsService {
   constructor(private readonly databaseService: DatabaseService) {}
 
-  async create(dto: CreateStockMovementDto, actor: BusinessUser): Promise<{ data: StockMovement; replay: boolean }> {
+  async create(
+    dto: CreateStockMovementDto,
+    actor: BusinessUser,
+    mode: 'create-or-replay' | 'replay-only' = 'create-or-replay',
+  ): Promise<{ data: StockMovement; replay: boolean }> {
     // PostgreSQL UUID equality is case-insensitive; use one identity for locks and storage.
     const transactionId = dto.transaction_id.toLowerCase();
     try {
@@ -40,6 +44,7 @@ export class StockMovementsService {
         const pointId = await this.assignedPoint(query, dto, actor);
         const replayed = await query(this.historySql(), [transactionId]);
         if (replayed[0]) return this.replay(replayed[0], dto, actor, pointId);
+        if (mode === 'replay-only') throw new NotFoundException('Không tìm thấy giao dịch với UUID này.');
 
         // This lookup only locates the product. Recheck the unit after acquiring locks.
         const lookup = await query('SELECT product_id, product_unit_id FROM public.product_units WHERE scan_code = $1', [dto.scan_code]);

@@ -1,5 +1,6 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { apiTags } from '../api-docs';
 import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
@@ -9,12 +10,16 @@ import { TransactionsService } from './transactions.service';
 @Controller('transactions')
 @UseGuards(AuthGuard, RolesGuard)
 @ApiBearerAuth()
+@ApiTags(apiTags.history)
 export class TransactionsController {
   constructor(private readonly service: TransactionsService) {}
 
   @Get()
   @Roles('ADMIN', 'STAFF', 'VIEWER')
-  @ApiOperation({ summary: 'Read-only transaction history. No inventory modification.', description: 'Exact filters; from inclusive and to exclusive. Current descriptive names are joined by ID; numeric and scan snapshots are historical. Sorted by created_at DESC, transaction_id DESC. count is the filtered total.' })
+  @ApiOperation({
+    summary: 'Xem lịch sử và tra cứu UUID',
+    description: 'Dùng transactionId để tìm chính xác một giao dịch. Trong KT2, kiểm tra count = 1 và các trường số gói, tồn trước/sau sau mỗi lượt. Lọc thời gian lấy từ from đến trước to. Tên hiển thị lấy theo danh mục hiện tại, còn dữ liệu số lượng và mã quét lấy theo snapshot đã lưu.',
+  })
   @ApiOkResponse({ schema: { type: 'object', required: ['data', 'count', 'pagination'], properties: {
     data: { type: 'array', items: { type: 'object', properties: {
       transaction_id: { type: 'string', format: 'uuid' }, product_id: { type: 'string' },
