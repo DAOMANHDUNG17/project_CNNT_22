@@ -1,5 +1,6 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { apiTags } from '../api-docs';
 import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
@@ -9,12 +10,13 @@ import { DashboardService } from './dashboard.service';
 @Controller('dashboard')
 @UseGuards(AuthGuard, RolesGuard)
 @ApiBearerAuth()
+@ApiTags(apiTags.inventory)
 export class DashboardController {
   constructor(private readonly service: DashboardService) {}
 
   @Get()
   @Roles('ADMIN', 'STAFF', 'VIEWER')
-  @ApiOperation({ summary: 'Read-only warehouse dashboard', description: 'UTC from/to dates are inclusive. Counts and quantities are exact decimal strings. Low stock excludes products without inventory.' })
+  @ApiOperation({ summary: 'Xem tổng quan kho', description: 'Xem chỉ số, xu hướng và sản phẩm tồn thấp. Khoảng ngày UTC tính cả from và to. Số lượng được trả dưới dạng chuỗi thập phân.' })
   @ApiOkResponse({ description: 'Summary, trends, paginated top products, latest five transactions, and up to five low-stock products.', schema: {
     type: 'object', required: ['summary', 'trends', 'top', 'latest', 'low_stock'], properties: {
       summary: { type: 'object', properties: {

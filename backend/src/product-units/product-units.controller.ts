@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiParam, ApiResponse } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { apiTags } from '../api-docs';
 import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
@@ -10,12 +11,13 @@ import { ProductUnitsService } from './product-units.service';
 @Controller('product-units')
 @UseGuards(AuthGuard, RolesGuard)
 @ApiBearerAuth()
+@ApiTags(apiTags.catalog)
 export class ProductUnitsController {
   constructor(private readonly productUnitsService: ProductUnitsService) {}
 
   @Get()
   @Roles('ADMIN', 'STAFF', 'VIEWER')
-  @ApiOperation({ summary: 'List product units with product names' })
+  @ApiOperation({ summary: 'Xem đơn vị đóng gói và mã quét', description: 'Tra sản phẩm, mã quét và hệ số quy đổi trước khi nhập hoặc xuất kho.' })
   @ApiOkResponse({
     description: 'All product units from public.product_units joined with public.products',
     schema: {
@@ -49,7 +51,7 @@ export class ProductUnitsController {
 
   @Post()
   @Roles('ADMIN')
-  @ApiOperation({ summary: 'Create a product unit and scan code without changing stock' })
+  @ApiOperation({ summary: 'Thêm đơn vị đóng gói', description: 'ADMIN gắn đơn vị, mã quét và hệ số quy đổi cho sản phẩm.' })
   @ApiBody({ type: CreateProductUnitDto })
   @ApiCreatedResponse({ description: 'Product unit created; BIGINT ID is a string', schema: {
     type: 'object', required: ['data'], properties: { data: { type: 'object',
@@ -77,7 +79,7 @@ export class ProductUnitsController {
 
   @Patch(':id')
   @Roles('ADMIN')
-  @ApiOperation({ summary: 'Update a product unit; base unit renames also update products.base_unit atomically' })
+  @ApiOperation({ summary: 'Sửa đơn vị đóng gói', description: 'ADMIN sửa thông tin đơn vị. Đổi tên đơn vị cơ sở đồng thời cập nhật tên đơn vị cơ sở của sản phẩm.' })
   @ApiParam({ name: 'id', description: 'Positive BIGINT product_unit_id', example: '29' })
   @ApiBody({ type: PatchProductUnitDto })
   @ApiOkResponse({ description: 'Updated product unit; BIGINT ID is a string', schema: {

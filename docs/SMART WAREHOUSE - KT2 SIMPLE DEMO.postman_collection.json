@@ -1,0 +1,424 @@
+{
+  "info": {
+    "name": "SMART WAREHOUSE — KT2 SIMPLE DEMO",
+    "description": "Ba bước KT2 với STAFF qua Postman Local Vault.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{vault:kt2AccessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "description": "URL backend",
+      "type": "string"
+    },
+    {
+      "key": "scanCode",
+      "value": "",
+      "description": "Mã quét thực tế của sản phẩm ở bước 01",
+      "type": "string"
+    },
+    {
+      "key": "quantityPackages",
+      "value": "1",
+      "description": "Số gói dùng ở bước 01",
+      "type": "string"
+    },
+    {
+      "key": "transactionId",
+      "value": "",
+      "description": "Xóa để tạo UUID mới ở 01 hoặc dán UUID có sẵn cho 02",
+      "type": "string"
+    },
+    {
+      "key": "scanPointId",
+      "value": "SCAN-01",
+      "description": "Điểm được phân công ở bước 01. Có thể để trống để dùng điểm hiện tại.",
+      "type": "string"
+    },
+    {
+      "key": "movementType",
+      "value": "IN",
+      "description": "IN hoặc OUT ở bước 01",
+      "type": "string"
+    },
+    {
+      "key": "_kt2LastReplayId",
+      "value": "",
+      "description": "Nội bộ, UUID của lần replay thành công gần nhất",
+      "type": "string"
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const vars = pm.collectionVariables;",
+          "const step = pm.info.requestName.slice(0, 2);",
+          "const baseUrl = String(vars.get('baseUrl') ?? '').trim().replace(/\\/+$/, '');",
+          "const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;",
+          "",
+          "function historyPath(id, point) {",
+          "  return '/api/transactions?transactionId=' + encodeURIComponent(id) + '&limit=1' +",
+          "    (point ? '&scanPointId=' + encodeURIComponent(point) : '');",
+          "}",
+          "",
+          "async function reader() {",
+          "  const token = await pm.vault.get('kt2AccessToken');",
+          "  if (!token) throw new Error('Local Vault chưa có phiên STAFF.');",
+          "  return async function get(path) {",
+          "    const response = await new Promise((resolve, reject) => {",
+          "      pm.sendRequest({",
+          "        url: baseUrl + path,",
+          "        method: 'GET',",
+          "        header: { Authorization: 'Bearer ' + token }",
+          "      }, (error, result) => error ? reject(new Error('Không kết nối được ' + path)) : resolve(result));",
+          "    });",
+          "    if (response.code === 401) throw new Error('HTTP 401 — Phiên STAFF thiếu hoặc đã hết hạn. Đăng nhập lại qua 00.');",
+          "    if (response.code === 403) throw new Error('HTTP 403 — Tài khoản thiếu quyền hoặc điểm quét hợp lệ.');",
+          "    if (response.code !== 200) throw new Error(path + ' trả HTTP ' + response.code);",
+          "    return response.json();",
+          "  };",
+          "}",
+          "",
+          "function inventoryFor(inventory, productId) {",
+          "  const row = inventory?.data?.find(item => item.product_id === productId);",
+          "  if (typeof row?.quantity_base !== 'string' || !/^\\d+$/.test(row.quantity_base) || !row.updated_at) {",
+          "    throw new Error('Thiếu tồn kho hiện tại của ' + productId + '.');",
+          "  }",
+          "  return row;",
+          "}",
+          "",
+          "",
+          "async function staffAccess(get) {",
+          "  const [profile, points] = await Promise.all([get('/api/auth/me'), get('/api/scan-points/my')]);",
+          "  const point = points.data?.[0];",
+          "  if (profile.role !== 'STAFF' || profile.is_active !== true || profile.user_id == null ||",
+          "      points.data?.length !== 1 || point?.is_active !== true || !point.scan_point_id) {",
+          "    throw new Error('Cần STAFF đang hoạt động với đúng một điểm quét đang hoạt động.');",
+          "  }",
+          "  return { userId: String(profile.user_id), point: point.scan_point_id };",
+          "}",
+          "",
+          "async function prepareNew(get, staff, id) {",
+          "  const scanCode = String(vars.get('scanCode') ?? '').trim();",
+          "  const point = String(vars.get('scanPointId') ?? '').trim() || staff.point;",
+          "  const movementType = String(vars.get('movementType') ?? '').trim();",
+          "  const input = String(vars.get('quantityPackages') ?? '').trim();",
+          "  const quantity = /^\\d+$/.test(input) ? Number(input) : NaN;",
+          "  if (!scanCode || !['IN', 'OUT'].includes(movementType) || !Number.isInteger(quantity) ||",
+          "      quantity < 1 || quantity > 2147483647) {",
+          "    throw new Error('Điền scanCode, movementType (IN/OUT) và quantityPackages nguyên từ 1 đến 2147483647.');",
+          "  }",
+          "  if (point !== staff.point) throw new Error('scanPointId phải khớp điểm quét được phân công.');",
+          "  const [units, inventory] = await Promise.all([get('/api/product-units'), get('/api/inventory')]);",
+          "  const unit = units.data?.find(item => item.scan_code === scanCode);",
+          "  if (!unit?.product_id || unit.product_unit_id == null ||",
+          "      !Number.isSafeInteger(unit.conversion_factor) || unit.conversion_factor < 1) {",
+          "    throw new Error('Không tìm thấy mã quét có hệ số quy đổi hợp lệ trong danh mục.');",
+          "  }",
+          "  const stock = inventoryFor(inventory, unit.product_id);",
+          "  if (stock.is_active !== true) throw new Error('Sản phẩm đã ngừng hoạt động.');",
+          "  const amount = BigInt(quantity) * BigInt(unit.conversion_factor);",
+          "  const expected = BigInt(stock.quantity_base) + (movementType === 'IN' ? amount : -amount);",
+          "  if (expected < 0n) throw new Error('Không đủ tồn kho để xuất.');",
+          "  if (expected > 9223372036854775807n) throw new Error('Tồn dự kiến vượt giới hạn BIGINT.');",
+          "",
+          "  const history = await get(historyPath(id));",
+          "  if (history.count !== 0 || history.data?.length !== 0) {",
+          "    throw new Error('UUID đã tồn tại. Dùng 02 để replay hoặc xóa transactionId để bắt đầu đợt mới.');",
+          "  }",
+          "  const body = {",
+          "    transaction_id: id, scan_code: scanCode, scan_point_id: point,",
+          "    movement_type: movementType, quantity_packages: quantity",
+          "  };",
+          "  const movement = {",
+          "    transaction_id: id.toLowerCase(), product_id: unit.product_id, product_unit_id: String(unit.product_unit_id),",
+          "    scan_code_snapshot: scanCode, scan_point_id: point, user_id: staff.userId, movement_type: movementType,",
+          "    quantity_packages: quantity, conversion_factor_snapshot: unit.conversion_factor, quantity_base: amount.toString(),",
+          "    inventory_before: stock.quantity_base, inventory_after: expected.toString()",
+          "  };",
+          "  return { body, movement, expected: expected.toString() };",
+          "}",
+          "",
+          "async function prepareExisting(get, staff, id) {",
+          "  const history = await get(historyPath(id, staff.point));",
+          "  if (history.count === 0 && history.data?.length === 0) {",
+          "    throw new Error('Không tìm thấy giao dịch với UUID này');",
+          "  }",
+          "  const row = history.data?.[0];",
+          "  if (history.count !== 1 || history.data?.length !== 1 || row?.transaction_id !== id) {",
+          "    throw new Error('Kết quả tra cứu UUID không khớp.');",
+          "  }",
+          "  if (row.user_id !== staff.userId || row.scan_point_id !== staff.point) {",
+          "    throw new Error('Chỉ STAFF đã thực hiện giao dịch và còn quyền tại điểm quét gốc mới được replay.');",
+          "  }",
+          "  const fields = [",
+          "    'transaction_id', 'product_id', 'product_unit_id', 'scan_code_snapshot', 'scan_point_id', 'user_id',",
+          "    'movement_type', 'quantity_packages', 'conversion_factor_snapshot', 'quantity_base',",
+          "    'inventory_before', 'inventory_after', 'created_at'",
+          "  ];",
+          "  const qty = row.quantity_packages;",
+          "  if (!fields.every(key => row[key] != null) || !row.scan_code_snapshot ||",
+          "      !['IN', 'OUT'].includes(row.movement_type) || !Number.isInteger(qty) || qty < 1 || qty > 2147483647) {",
+          "    throw new Error('Bản ghi gốc thiếu dữ liệu cần thiết để replay.');",
+          "  }",
+          "  const stock = inventoryFor(await get('/api/inventory'), row.product_id);",
+          "  const quantity = step === '02' ? qty : qty === 2147483647 ? qty - 1 : qty + 1;",
+          "  const body = {",
+          "    transaction_id: id, scan_code: row.scan_code_snapshot, scan_point_id: row.scan_point_id,",
+          "    movement_type: row.movement_type, quantity_packages: quantity",
+          "  };",
+          "  return {",
+          "    body,",
+          "    movement: Object.fromEntries(fields.map(key => [key, row[key]])),",
+          "    expected: stock.quantity_base,",
+          "    updatedAt: stock.updated_at",
+          "  };",
+          "}",
+          "",
+          "async function prepare() {",
+          "  pm.variables.set('baseUrl', baseUrl);",
+          "  const path = step === '01' ? '/api/stock-movements' : '/api/stock-movements/replay';",
+          "  if (!baseUrl || pm.variables.replaceIn(pm.request.url.toString()) !== baseUrl + path ||",
+          "      pm.request.method !== 'POST' || pm.request.body?.raw !== '{{kt2Body}}') {",
+          "    throw new Error('Kiểm tra baseUrl, URL và mẫu body của collection.');",
+          "  }",
+          "",
+          "  let enteredId = String(vars.get('transactionId') ?? '').trim();",
+          "  if ((enteredId || step !== '01') && !uuid.test(enteredId)) throw new Error('Điền transactionId là UUID hợp lệ.');",
+          "  if (!enteredId) {",
+          "    enteredId = pm.variables.replaceIn('{{$guid}}');",
+          "    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(enteredId)) {",
+          "      throw new Error('Không tạo được UUID v4.');",
+          "    }",
+          "    vars.set('transactionId', enteredId);",
+          "  }",
+          "  const id = enteredId.toLowerCase();",
+          "  if (step === '03' && vars.get('_kt2LastReplayId') !== id) {",
+          "    throw new Error('Gửi 02 thành công với UUID này trước khi thử 03.');",
+          "  }",
+          "  if (step !== '03') vars.set('_kt2LastReplayId', '');",
+          "",
+          "  const get = await reader();",
+          "  const staff = await staffAccess(get);",
+          "  if (step === '01') {",
+          "    const swagger = await get('/api/docs-json');",
+          "    const api = '/api/stock-movements';",
+          "    const created = swagger.paths?.[api]?.post?.responses?.['201']?.content?.['application/json']?.schema;",
+          "    if (!swagger.paths?.[api + '/replay']?.post || created?.properties?.is_duplicate?.example !== false) {",
+          "      throw new Error('Backend đang chạy chưa có phiên bản KT2 hỗ trợ replay. Khởi động backend từ source mới.');",
+          "    }",
+          "  }",
+          "  const snapshot = step === '01' ? await prepareNew(get, staff, enteredId) : await prepareExisting(get, staff, id);",
+          "  pm.variables.set('kt2Snapshot', JSON.stringify(snapshot));",
+          "  pm.variables.set('kt2Body', JSON.stringify(snapshot.body, null, 2));",
+          "}",
+          "",
+          "prepare().catch(error => {",
+          "  const message = error instanceof Error ? error.message : 'Kiểm tra Local Vault và cấu hình KT2.';",
+          "  console.error(message);",
+          "  pm.test('Request KT2 bị chặn trước khi gửi', () => { throw new Error(message); });",
+          "  pm.execution.setNextRequest(null);",
+          "  pm.execution.skipRequest();",
+          "});"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const vars = pm.collectionVariables;",
+          "const step = pm.info.requestName.slice(0, 2);",
+          "const baseUrl = String(vars.get('baseUrl') ?? '').trim().replace(/\\/+$/, '');",
+          "const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;",
+          "",
+          "function historyPath(id, point) {",
+          "  return '/api/transactions?transactionId=' + encodeURIComponent(id) + '&limit=1' +",
+          "    (point ? '&scanPointId=' + encodeURIComponent(point) : '');",
+          "}",
+          "",
+          "async function reader() {",
+          "  const token = await pm.vault.get('kt2AccessToken');",
+          "  if (!token) throw new Error('Local Vault chưa có phiên STAFF.');",
+          "  return async function get(path) {",
+          "    const response = await new Promise((resolve, reject) => {",
+          "      pm.sendRequest({",
+          "        url: baseUrl + path,",
+          "        method: 'GET',",
+          "        header: { Authorization: 'Bearer ' + token }",
+          "      }, (error, result) => error ? reject(new Error('Không kết nối được ' + path)) : resolve(result));",
+          "    });",
+          "    if (response.code === 401) throw new Error('HTTP 401 — Phiên STAFF thiếu hoặc đã hết hạn. Đăng nhập lại qua 00.');",
+          "    if (response.code === 403) throw new Error('HTTP 403 — Tài khoản thiếu quyền hoặc điểm quét hợp lệ.');",
+          "    if (response.code !== 200) throw new Error(path + ' trả HTTP ' + response.code);",
+          "    return response.json();",
+          "  };",
+          "}",
+          "",
+          "function inventoryFor(inventory, productId) {",
+          "  const row = inventory?.data?.find(item => item.product_id === productId);",
+          "  if (typeof row?.quantity_base !== 'string' || !/^\\d+$/.test(row.quantity_base) || !row.updated_at) {",
+          "    throw new Error('Thiếu tồn kho hiện tại của ' + productId + '.');",
+          "  }",
+          "  return row;",
+          "}",
+          "",
+          "",
+          "function check(name, verify) {",
+          "  let passed = false;",
+          "  pm.test(name, () => { verify(); passed = true; });",
+          "  return passed;",
+          "}",
+          "",
+          "async function verify() {",
+          "  const snapshot = JSON.parse(pm.variables.get('kt2Snapshot') || 'null');",
+          "  if (!snapshot) throw new Error('Thiếu dữ liệu đã chuẩn bị trước khi gửi.');",
+          "  const expectedStatus = { '01': 201, '02': 200, '03': 409 }[step];",
+          "  const correctStatus = check('HTTP ' + expectedStatus, () => pm.response.to.have.status(expectedStatus));",
+          "  const labels = {",
+          "    '01': 'Tạo giao dịch thành công',",
+          "    '02': 'Không ghi trùng giao dịch • is_duplicate = true',",
+          "    '03': 'Từ chối thay đổi nội dung giao dịch đã lưu'",
+          "  };",
+          "  const movement = snapshot.movement;",
+          "  const validResponse = correctStatus && check(labels[step], () => {",
+          "    const result = pm.response.json();",
+          "    if (step === '03') {",
+          "      pm.expect(result).to.include({",
+          "        statusCode: 409,",
+          "        message: 'Mã giao dịch đã được dùng cho một lượt nhập/xuất khác.'",
+          "      });",
+          "    } else {",
+          "      const message = step === '01' ? 'Giao dịch được tạo thành công.' :",
+          "        'Giao dịch đã được xử lý trước đó. Hệ thống không ghi trùng và không cập nhật tồn kho lần nữa.';",
+          "      pm.expect(result).to.include({ message, is_duplicate: step === '02' });",
+          "      pm.expect(result.data).to.include(movement);",
+          "      if (step === '01') {",
+          "        pm.expect(result.data.created_at).to.be.a('string').and.not.be.empty;",
+          "        movement.created_at = result.data.created_at;",
+          "      }",
+          "    }",
+          "  });",
+          "",
+          "  const get = await reader();",
+          "  const [inventory, history] = await Promise.all([",
+          "    get('/api/inventory'), get(historyPath(movement.transaction_id, movement.scan_point_id))",
+          "  ]);",
+          "  const stock = inventoryFor(inventory, movement.product_id);",
+          "  const validHistory = check(step === '01' ? 'UUID có đúng một bản ghi mới' :",
+          "    'Tìm thấy UUID đã tồn tại • Giữ đúng một bản ghi gốc', () => {",
+          "    pm.expect(history.count).to.equal(1);",
+          "    pm.expect(history.data).to.have.lengthOf(1);",
+          "    pm.expect(history.data[0]).to.include(movement);",
+          "  });",
+          "  const stockLabel = step === '01' ? 'Tồn kho thay đổi đúng theo hệ số quy đổi' : 'Tồn kho không cập nhật lần hai';",
+          "  const validStock = check(stockLabel + ' • ' + movement.product_id + ' = ' + stock.quantity_base, () => {",
+          "    pm.expect(stock.quantity_base).to.equal(snapshot.expected);",
+          "    if (step !== '01') pm.expect(stock.updated_at, 'updated_at').to.equal(snapshot.updatedAt);",
+          "  });",
+          "",
+          "  if (step === '02' && validResponse && validHistory && validStock) {",
+          "    vars.set('_kt2LastReplayId', movement.transaction_id);",
+          "  }",
+          "  if (!validResponse || !validHistory || !validStock) pm.execution.setNextRequest(null);",
+          "}",
+          "",
+          "verify().catch(error => {",
+          "  pm.test('Đối chiếu dữ liệu KT2', () => {",
+          "    throw new Error(error instanceof Error ? error.message : 'Kiểm tra phản hồi Backend.');",
+          "  });",
+          "  pm.execution.setNextRequest(null);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "01 — CREATE NEW TRANSACTION (201)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{{kt2Body}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{baseUrl}}/api/stock-movements",
+        "description": "Tạo hoặc dùng UUID đã nhập, tra mã quét và tồn thực tế trước khi gửi."
+      }
+    },
+    {
+      "name": "02 — CHECK & REPLAY UUID (200)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{{kt2Body}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{baseUrl}}/api/stock-movements/replay",
+        "description": "Tra transactionId tại điểm quét của STAFF, rồi tái tạo đúng body gốc."
+      }
+    },
+    {
+      "name": "03 — MODIFY SAME UUID — REJECT (409)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{{kt2Body}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{baseUrl}}/api/stock-movements/replay",
+        "description": "Tra lại cùng UUID và chỉ sửa số gói sang một giá trị hợp lệ khác."
+      }
+    }
+  ]
+}

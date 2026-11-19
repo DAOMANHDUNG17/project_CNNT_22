@@ -1,7 +1,7 @@
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { setupApiDocs } from './api-docs';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -25,14 +25,7 @@ async function bootstrap() {
     }),
   );
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('Smart Warehouse API')
-    .setDescription('Backend API for Smart Warehouse Management System')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
-  const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('api/docs', app, swaggerDocument);
+  setupApiDocs(app);
 
   const port = configService.get<number>('PORT', 3000);
   await app.listen(port, '127.0.0.1');

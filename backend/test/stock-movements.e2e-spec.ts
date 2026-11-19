@@ -91,7 +91,7 @@ describe('POST /api/stock-movements (e2e with transactional database fake)', () 
 
   const post = (app: INestApplication<App>, body: object = payload) => request(app.getHttpServer()).post('/api/stock-movements').set('Authorization', 'Bearer valid-token').send(body);
 
-  it('documents the one IN endpoint, bearer auth, request and retry response', () => {
+  it('documents the movement endpoint, bearer auth, request and KT2 response schemas', () => {
     const document = SwaggerModule.createDocument(app, new DocumentBuilder().addBearerAuth().build());
     const operation = document.paths['/api/stock-movements']?.post;
     expect(operation?.security).toEqual([{ bearer: [] }]);
@@ -100,10 +100,33 @@ describe('POST /api/stock-movements (e2e with transactional database fake)', () 
     expect(operation?.responses?.[201]).toHaveProperty(
       ['content', 'application/json', 'schema', 'properties', 'data', 'properties', 'movement_type', 'enum'], ['IN', 'OUT'],
     );
+    for (const [status, isDuplicate] of [[201, false], [200, true]] as const) {
+      expect(operation?.responses?.[status]).toHaveProperty(
+        ['content', 'application/json', 'schema'],
+        expect.objectContaining({
+          required: ['message', 'is_duplicate', 'data'],
+          properties: expect.objectContaining({
+            message: expect.objectContaining({ type: 'string', example: expect.any(String) }),
+            is_duplicate: { type: 'boolean', enum: [isDuplicate], example: isDuplicate },
+          }),
+        }),
+      );
+    }
+    expect(operation?.responses?.[409]).toHaveProperty(
+      ['content', 'application/json', 'schema', 'properties', 'message', 'example'],
+      'Mã giao dịch đã được dùng cho một lượt nhập/xuất khác.',
+    );
     for (const status of [200, 201, 400, 401, 403, 404, 409, 500]) {
       expect(operation?.responses?.[status]).toBeDefined();
     }
     expect(document.paths['/api/stock-movements']?.get).toBeUndefined();
+    const replay = document.paths['/api/stock-movements/replay']?.post;
+    expect(replay?.security).toEqual([{ bearer: [] }]);
+    expect(replay?.responses?.[200]).toHaveProperty(
+      ['content', 'application/json', 'schema', 'properties', 'is_duplicate', 'enum'], [true],
+    );
+    expect(replay?.responses?.[404]).toBeDefined();
+    expect(replay?.responses?.[201]).toBeUndefined();
   });
 
   it('requires JWT and ADMIN/STAFF while rejecting VIEWER/inactive users', async () => {
@@ -192,10 +215,15 @@ describe('POST /api/stock-movements (e2e with transactional database fake)', () 
   it('KT2 exact replay returns the original snapshot without inventory or history DML', async () => {
     const body = { ...payload, quantity_packages: 3 };
     const created = await post(app, body).expect(201);
+    expect(created.body).toMatchObject({ message: 'Giao dịch được tạo thành công.', is_duplicate: false });
     const saved = structuredClone(history.get(id));
     query.mockClear();
     const replay = await post(app, body).expect(200);
-    expect(replay.body).toEqual(created.body);
+    expect(replay.body).toEqual({
+      message: 'Giao dịch đã được xử lý trước đó. Hệ thống không ghi trùng và không cập nhật tồn kho lần nữa.',
+      is_duplicate: true,
+      data: created.body.data,
+    });
     expect(stock).toBe('172'); expect(history.size).toBe(1);
     expect(history.get(id)).toEqual(saved);
     expect(query.mock.calls.filter(([sql]) => /^(UPDATE|INSERT|DELETE|TRUNCATE)\b/iu.test(String(sql)))).toHaveLength(0);
@@ -208,6 +236,40 @@ describe('POST /api/stock-movements (e2e with transactional database fake)', () 
     expect(first.body.data.transaction_id).toBe(id);
     expect(second.body.data.transaction_id).toBe(secondId);
     expect(stock).toBe('148'); expect(history.size).toBe(2);
+  });
+
+  const replayOnly = (app: INestApplication<App>, body: object = payload) =>
+    request(app.getHttpServer()).post('/api/stock-movements/replay').set('Authorization', 'Bearer valid-token').send(body);
+
+  it('replays existing UUIDs only and preserves data through replay, conflict and access checks', async () => {
+    const created = await post(app).expect(201);
+    const saved = structuredClone(history.get(id));
+    query.mockClear();
+
+    const replay = await replayOnly(app).expect(200);
+    expect(replay.body).toMatchObject({ is_duplicate: true, data: created.body.data });
+    const conflict = await replayOnly(app, { ...payload, quantity_packages: 2 }).expect(409);
+    expect(conflict.body.message).toBe('Mã giao dịch đã được dùng cho một lượt nhập/xuất khác.');
+    userId = '43';
+    await replayOnly(app).expect(409);
+    assignedIds = ['SCAN-02'];
+    await replayOnly(app).expect(403);
+    role = 'ADMIN';
+    await replayOnly(app).expect(403);
+    await request(app.getHttpServer()).post('/api/stock-movements/replay').send(payload).expect(401);
+
+    expect(stock).toBe('124');
+    expect(history.size).toBe(1);
+    expect(history.get(id)).toEqual(saved);
+    expect(query.mock.calls.some(([sql]) => /^(UPDATE|INSERT|DELETE)\b/iu.test(String(sql)))).toBe(false);
+  });
+
+  it('returns 404 for unknown UUIDs on the replay-only route without accessing the write path', async () => {
+    const response = await replayOnly(app).expect(404);
+    expect(response.body.message).toBe('Không tìm thấy giao dịch với UUID này.');
+    expect(stock).toBe('100');
+    expect(history.size).toBe(0);
+    expect(query.mock.calls.some(([sql]) => /^(UPDATE|INSERT)|FROM public\.product_units/u.test(String(sql)))).toBe(false);
   });
 
   it.each(['product_id', 'product_unit_id'])('KT2 rejects changing %s directly on an existing UUID', async field => {
@@ -226,6 +288,10 @@ describe('POST /api/stock-movements (e2e with transactional database fake)', () 
     const saved = structuredClone(history.get(id));
     query.mockClear();
     const response = await post(app, { ...payload, ...changed }).expect(409);
+    expect(response.body).toMatchObject({
+      statusCode: 409,
+      message: 'Mã giao dịch đã được dùng cho một lượt nhập/xuất khác.',
+    });
     expect(response.body.data).toBeUndefined();
     expect(stock).toBe('124'); expect(history.size).toBe(1);
     expect(history.get(id)).toEqual(saved);

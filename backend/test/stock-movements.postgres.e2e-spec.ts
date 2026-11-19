@@ -194,16 +194,52 @@ describePostgres('POST /api/stock-movements with isolated PostgreSQL', () => {
     expect(String(state.count)).toBe('0');
   });
 
-  it('KT2 replay preserves inventory updated_at and the original response', async () => {
+  it('KT2 creates one row and preserves it and inventory through replay and conflict', async () => {
     const body = { ...basePayload, transaction_id: uuid('120'), quantity_packages: 2 };
+    const readState = async () => (await sql.unsafe(`
+      SELECT quantity_base::text, updated_at::text,
+        (SELECT count(*)::int FROM stock_transactions) AS count,
+        (SELECT to_jsonb(t) FROM stock_transactions t WHERE t.transaction_id = $1) AS movement
+      FROM inventory WHERE product_id = 'P1'
+    `, [body.transaction_id]))[0];
+
+    expect(await readState()).toMatchObject({ quantity_base: '100', count: 0, movement: null });
     const created = await post(body, 'staff-token').expect(201);
-    const [before] = await sql.unsafe("SELECT quantity_base::text,updated_at::text FROM inventory WHERE product_id='P1'");
+    expect(created.body).toMatchObject({
+      message: 'Giao dịch được tạo thành công.',
+      is_duplicate: false,
+      data: { transaction_id: body.transaction_id, inventory_before: '100', inventory_after: '148' },
+    });
+    const saved = await readState();
+    expect(saved).toMatchObject({
+      quantity_base: '148',
+      count: 1,
+      movement: { transaction_id: body.transaction_id, quantity_packages: 2 },
+    });
+
     const replay = await post(body, 'staff-token').expect(200);
-    const [after] = await sql.unsafe("SELECT quantity_base::text,updated_at::text FROM inventory WHERE product_id='P1'");
-    expect(replay.body).toEqual(created.body);
-    expect(before.quantity_base).toBe('148');
-    expect(after).toEqual(before);
-    expect((await sql.unsafe('SELECT count(*)::int AS count FROM stock_transactions WHERE transaction_id=$1', [body.transaction_id]))[0].count).toBe(1);
+    expect(replay.body).toEqual({
+      message: 'Giao dịch đã được xử lý trước đó. Hệ thống không ghi trùng và không cập nhật tồn kho lần nữa.',
+      is_duplicate: true,
+      data: created.body.data,
+    });
+    expect(await readState()).toEqual(saved);
+
+    const conflict = await post({ ...body, quantity_packages: 3 }, 'staff-token').expect(409);
+    expect(conflict.body).toEqual({
+      message: 'Mã giao dịch đã được dùng cho một lượt nhập/xuất khác.',
+      error: 'Conflict',
+      statusCode: 409,
+    });
+    expect(await readState()).toEqual(saved);
+
+    const replayOnly = (payload: object) => request(app.getHttpServer())
+      .post('/api/stock-movements/replay').set('Authorization', 'Bearer staff-token').send(payload);
+    const existing = await replayOnly(body).expect(200);
+    expect(existing.body).toEqual(replay.body);
+    await replayOnly({ ...body, quantity_packages: 3 }).expect(409);
+    await replayOnly({ ...body, transaction_id: uuid('122') }).expect(404);
+    expect(await readState()).toEqual(saved);
   });
 
   it('KT2 concurrent uppercase/lowercase UUID requests create one movement', async () => {

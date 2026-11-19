@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiParam, ApiResponse } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { apiTags } from '../api-docs';
 import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
@@ -10,12 +11,13 @@ import { ProductsService } from './products.service';
 @Controller('products')
 @UseGuards(AuthGuard, RolesGuard)
 @ApiBearerAuth()
+@ApiTags(apiTags.catalog)
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
   @Get()
   @Roles('ADMIN', 'STAFF', 'VIEWER')
-  @ApiOperation({ summary: 'List products' })
+  @ApiOperation({ summary: 'Xem danh mục sản phẩm', description: 'Liệt kê mã sản phẩm, tên, đơn vị cơ sở và trạng thái.' })
   @ApiOkResponse({
     description: 'All products from public.products',
     schema: {
@@ -47,7 +49,7 @@ export class ProductsController {
 
   @Post()
   @Roles('ADMIN')
-  @ApiOperation({ summary: 'Declare a new product without stock movement' })
+  @ApiOperation({ summary: 'Khai báo sản phẩm mới', description: 'ADMIN tạo sản phẩm và hệ thống khởi tạo tồn bằng 0.' })
   @ApiBody({ type: CreateProductDto })
   @ApiCreatedResponse({
     description: 'Product created; the database trigger initializes inventory to zero',
@@ -76,7 +78,7 @@ export class ProductsController {
 
   @Patch(':id')
   @Roles('ADMIN')
-  @ApiOperation({ summary: 'Edit product name or active status without changing stock', description: 'At least one of product_name or is_active is required. Deactivation requires zero inventory.' })
+  @ApiOperation({ summary: 'Sửa tên hoặc trạng thái sản phẩm', description: 'ADMIN gửi product_name, is_active hoặc cả hai. Chỉ ngừng hoạt động khi tồn bằng 0.' })
   @ApiParam({ name: 'id', example: 'SP013', description: 'Existing product ID, at most 20 characters' })
   @ApiBody({ type: PatchProductDto, description: 'At least one field required. Unknown fields are rejected.' })
   @ApiOkResponse({ description: 'Updated or unchanged product; updated_at changes only when data changes', schema: {

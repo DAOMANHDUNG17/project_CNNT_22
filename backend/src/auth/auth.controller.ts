@@ -1,5 +1,6 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiExcludeEndpoint, ApiOkResponse, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { apiTags } from '../api-docs';
 import { AuthGuard } from './auth.guard';
 import type { BusinessUser } from './auth.types';
 import { CurrentUser } from './current-user.decorator';
@@ -9,9 +10,16 @@ import { RolesGuard } from './roles.guard';
 @Controller('auth')
 @UseGuards(AuthGuard, RolesGuard)
 @ApiBearerAuth()
+@ApiTags(apiTags.account)
 export class AuthController {
   @Get('me')
-  @ApiOperation({ summary: 'Get the current business user' })
+  @ApiOperation({ summary: 'Xem hồ sơ phiên hiện tại', description: 'Xác nhận tài khoản nghiệp vụ, vai trò và trạng thái của phiên Supabase đang dùng.' })
+  @ApiOkResponse({
+    description: 'Hồ sơ nghiệp vụ của phiên đang xác thực',
+    schema: { example: { user_id: '42', username: 'staff-demo', display_name: 'Nhân viên kho', role: 'STAFF', is_active: true } },
+  })
+  @ApiResponse({ status: 401, description: 'Thiếu JWT hoặc JWT không hợp lệ' })
+  @ApiResponse({ status: 403, description: 'Tài khoản nghiệp vụ thiếu quyền hoặc đã ngừng hoạt động' })
   me(@CurrentUser() user: BusinessUser) {
     return {
       user_id: user.user_id,
@@ -24,7 +32,7 @@ export class AuthController {
 
   @Get('admin-check')
   @Roles('ADMIN')
-  @ApiOperation({ summary: 'Check administrator access' })
+  @ApiExcludeEndpoint()
   adminCheck() {
     return { status: 'ok', role: 'ADMIN' };
   }

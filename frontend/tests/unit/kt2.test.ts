@@ -20,9 +20,16 @@ describe('KT2 client evidence', () => {
     expect(payload).toEqual({ transaction_id: row.transaction_id, scan_code: 'OLD-CODE', scan_point_id: 'SCAN-01', movement_type: 'IN' });
     expect(originalRetryPayload({ ...row, quantity_packages: 3 })).toEqual({ ...payload, quantity_packages: 3 });
     getSession.mockResolvedValue({ data: { session: { access_token: 'session-token' } }, error: null });
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { transaction_id: row.transaction_id } }), { status: 200 }));
+    const replay = {
+      message: 'Giao dịch đã được xử lý trước đó. Hệ thống không ghi trùng và không cập nhật tồn kho lần nữa.',
+      is_duplicate: true,
+      data: { transaction_id: row.transaction_id },
+    };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(replay), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
-    expect((await retryStockIn(payload)).status).toBe(200);
+    const result = await retryStockIn(payload);
+    expect(result.status).toBe(200);
+    expect(result.data.data).toEqual(replay.data);
     expect(fetchMock).toHaveBeenCalledWith(expect.stringMatching(/\/stock-movements$/), expect.objectContaining({
       method: 'POST', body: JSON.stringify(payload), headers: expect.objectContaining({ Authorization: 'Bearer session-token' }),
     }));
