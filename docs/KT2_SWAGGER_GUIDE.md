@@ -12,7 +12,7 @@
 
 - Trong **02 — Danh mục sản phẩm**, mở **GET /api/product-units** và chọn mã quét có thật. Ghi lại `product_id`, `scan_code` và `conversion_factor`.
 - Trong **03 — Quản lý tồn kho**, chạy **GET /api/inventory**. Tìm dòng `product_id` cần thử và ghi lại `quantity_base` cùng `updated_at`. Gọi tồn ban đầu là `N`.
-- Tạo UUID mới một lần trong PowerShell bằng `[guid]::NewGuid().ToString()`. Giữ UUID đó cho cả ba lượt của một đợt KT2.
+- Tạo UUID mới một lần trong PowerShell bằng `[guid]::NewGuid().ToString()`. Sau lượt 201, sao chép nguyên `data.transaction_id` trong response vào `transaction_id` của lượt 200 và 409. Đổi giá trị một chữ số hex sẽ thành UUID khác.
 
 ## 3. Gửi 201 → 200 → 409
 
@@ -23,6 +23,8 @@ Mở **04 — Nhập / xuất kho → POST /api/stock-movements → Try it out**
 | 1 · Tạo mới | UUID mới, mã quét thật, đúng điểm quét, `movement_type: "IN"`, ví dụ `quantity_packages: 2`. | **201 Created**. `is_duplicate: false`, `data.inventory_before = N`, `data.inventory_after` bằng tồn dự kiến. |
 | 2 · Replay | Giữ nguyên UUID và toàn bộ body của lượt 1. | **200 OK**. Thông báo giao dịch đã xử lý, `is_duplicate: true`, trả dữ liệu giao dịch gốc. |
 | 3 · Conflict | Giữ UUID, mã quét, điểm quét và loại giao dịch. Chỉ đổi `quantity_packages`, ví dụ từ 2 thành 3. | **409 Conflict**. Thông báo mã giao dịch đã được dùng cho một lượt nhập/xuất khác. |
+
+Để demo thêm xung đột giữa hai sản phẩm trên QA, chọn mã quét của sản phẩm thứ hai từ **GET /api/product-units**. Giữ nguyên UUID sao chép từ response 201 và chỉ thay `scan_code`. Backend lấy sản phẩm theo mã quét, còn `product_id` xuất hiện trong response. Kết quả là **409 Conflict** và tồn của cả hai sản phẩm giữ nguyên. Trước khi bấm **Execute**, đối chiếu `transaction_id` trong ô JSON với UUID đã sao chép.
 
 Route `POST /api/stock-movements/replay` dành cho replay an toàn của các collection KT2, với UUID thiếu trả 404. Ba lượt demo trên dùng route ghi nhận chính để thấy đủ 201, 200 và 409.
 

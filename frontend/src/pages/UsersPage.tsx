@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
-import { App, Avatar, Button, Card, Checkbox, Form, Input, Modal, Popconfirm, Select, Space, Tag } from 'antd';
-import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
+import { Alert, App, Avatar, Button, Card, Checkbox, Form, Input, Modal, Popconfirm, Select, Space, Tag } from 'antd';
+import { PlusOutlined, SearchOutlined, StopOutlined } from '@ant-design/icons';
 import { createDatabaseUser, listDatabaseUsers, updateDatabaseUser } from '../lib/users-api';
 import type { CreateManagedUser, ManagedRole, ManagedUser, PatchManagedUser } from '../lib/users-api';
 import { useAuth } from '../auth/AuthProvider';
@@ -28,6 +28,7 @@ export default function UsersPage() {
   const [scanAccess, setScanAccess] = useState(initialScanPointAccess);
   const [form] = Form.useForm<CreateManagedUser>();
   const draftRole = Form.useWatch('role', form);
+  const isViewer = (draftRole ?? editing?.role) === 'VIEWER';
   const mutation = useMutation();
   const resource = useResource(useCallback(signal => listDatabaseUsers({ ...paging, q, role, isActive: active }, { signal }), [paging, q, role, active]));
   const resetPage = () => setPaging(current => ({ ...current, page: 1 }));
@@ -43,15 +44,16 @@ export default function UsersPage() {
   }
   async function save(values: CreateManagedUser) {
     if (editing) {
-      if (!scanAccess.ready || scanAccess.invalid) return;
+      const managesScanAccess = values.role !== 'VIEWER';
+      if (managesScanAccess && (!scanAccess.ready || scanAccess.invalid)) return;
       const patch: PatchManagedUser = {};
       if (values.username.trim() !== editing.username) patch.username = values.username.trim();
       if (values.display_name.trim() !== editing.display_name) patch.display_name = values.display_name.trim();
       if (values.role !== editing.role) patch.role = values.role;
-      const accessChanged = !sameScanPointIds(scanAccess.ids, scanAccess.savedIds);
+      const accessChanged = managesScanAccess && !sameScanPointIds(scanAccess.ids, scanAccess.savedIds);
       if (!Object.keys(patch).length && !accessChanged) { message.info('Không có thay đổi.'); setEditing(undefined); return; }
       await mutation.run(async () => {
-        if (editing.role === 'STAFF' && values.role !== 'STAFF' && scanAccess.ids.length > 1) {
+        if (editing.role === 'STAFF' && values.role === 'ADMIN' && scanAccess.ids.length > 1) {
           await updateDatabaseUser(editing.user_id, patch);
           try { await replaceUserScanPointAccess(editing.user_id, scanAccess.ids); }
           catch (error) { resource.reload(); throw new ApiError(error instanceof ApiError ? error.status : 503, 'USER_MANAGEMENT_ERROR', `Thông tin người dùng đã lưu; chưa xác nhận được quyền điểm quét. ${errorMessage(error)}`); }
@@ -102,10 +104,12 @@ export default function UsersPage() {
         <Form.Item label="Tên hiển thị" name="display_name" rules={textRules(120)}><Input maxLength={120} /></Form.Item>
         <Form.Item label="Email đăng nhập" name="email" rules={editing ? [] : [{ required: true, message: 'Nhập email.' }, { type: 'email', message: 'Email không hợp lệ.' }, { max: 254 }]} extra={editing ? 'Email được liên kết với tài khoản Supabase Auth.' : undefined}><Input type="email" maxLength={254} disabled={!!editing || mutation.busy} autoComplete="off" /></Form.Item>
         <Form.Item label="Vai trò" name="role" rules={[{ required: true, message: 'Chọn vai trò.' }]}><Select options={roleOptions} /></Form.Item>
+        {isViewer && <Alert className="form-alert" type="error" showIcon icon={<StopOutlined aria-hidden />}
+          title="Người xem không có quyền nhập kho, xuất kho hoặc sử dụng điểm quét." />}
         {editing && <UserScanPointAccess key={`${editing.user_id}-${editVersion}`} userId={editing.user_id} role={draftRole ?? editing.role} disabled={mutation.busy} onChange={setScanAccess} />}
         {!editing && <><Form.Item label="Mật khẩu ban đầu" name="password" rules={passwordRules} extra="12–128 ký tự. Chuyển mật khẩu cho người dùng qua kênh riêng."><Input.Password autoComplete="new-password" maxLength={128} /></Form.Item>
           <Form.Item name="is_active" valuePropName="checked"><Checkbox>Cho phép hoạt động ngay</Checkbox></Form.Item></>}
-        <div className="modal-actions"><Button disabled={mutation.busy} onClick={close}>Hủy</Button><Button aria-label="Lưu người dùng" type="primary" htmlType="submit" loading={mutation.busy} disabled={!!editing && (!scanAccess.ready || scanAccess.invalid)}>Lưu người dùng</Button></div>
+        <div className="modal-actions"><Button disabled={mutation.busy} onClick={close}>Hủy</Button><Button aria-label="Lưu người dùng" type="primary" htmlType="submit" loading={mutation.busy} disabled={!!editing && !isViewer && (!scanAccess.ready || scanAccess.invalid)}>Lưu người dùng</Button></div>
       </Form>
     </Modal>
   </div>;

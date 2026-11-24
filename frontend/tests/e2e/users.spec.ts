@@ -46,6 +46,14 @@ test('ADMIN reads database users, creates linked account, edits role, locks/unlo
   await expect(page.getByRole('cell', { name: 'operator@example.test', exact: true })).toBeVisible();
   const dialog = await form(page);
   await expect(dialog.getByText('Thủ kho', { exact: true })).toHaveCount(0);
+  const role = dialog.getByLabel('Vai trò', { exact: true });
+  const viewerNotice = dialog.getByText('Người xem không có quyền nhập kho, xuất kho hoặc sử dụng điểm quét.', { exact: true });
+  await role.click();
+  await page.getByTitle('Người xem', { exact: true }).click();
+  await expect(viewerNotice).toBeVisible();
+  await role.click();
+  await page.getByTitle('Nhân viên', { exact: true }).click();
+  await expect(viewerNotice).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Lưu người dùng' }).dblclick();
   await expect(page.getByRole('dialog')).toBeHidden();
   expect(writes).toHaveLength(1);
@@ -83,9 +91,18 @@ for (const role of ['STAFF', 'VIEWER']) test(`${role} cannot see admin menus or 
 
 test('Users loading/error retry uses API and never displays mock accounts', async ({ page }) => {
   await session(page); let attempts = 0;
-  await page.route('**/api/users**', async route => { attempts++; await new Promise(resolve => setTimeout(resolve, 500)); return route.fulfill({ status: attempts === 1 ? 500 : 200, json: attempts === 1 ? { message: 'unavailable' } : { data: [], count: 0, pagination: { page: 1, limit: 20, total: 0, totalPages: 0 } } }); });
+  let releaseFirstLoad!: () => void;
+  const firstLoad = new Promise<void>(resolve => { releaseFirstLoad = resolve; });
+  await page.route('**/api/users**', async route => {
+    if (++attempts === 1) {
+      await firstLoad;
+      return route.fulfill({ status: 500, json: { message: 'unavailable' } });
+    }
+    return route.fulfill({ json: { data: [], count: 0, pagination: { page: 1, limit: 20, total: 0, totalPages: 0 } } });
+  });
   await page.goto('/users');
-  await expect(page.locator('.ant-spin-spinning')).toBeVisible();
+  try { await expect(page.locator('.data-table .ant-spin-spinning')).toBeVisible(); }
+  finally { releaseFirstLoad(); }
   await expect(page.locator('.error-notice')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Sửa người dùng' })).toHaveCount(0);
   await page.locator('.error-notice').getByRole('button', { name: 'Thử lại' }).click();

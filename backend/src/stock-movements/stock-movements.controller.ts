@@ -58,8 +58,9 @@ export class StockMovementsController {
       'Dùng mã quét có thật và điểm quét đang được phân công. Nếu bỏ quantity_packages, hệ thống dùng 1 gói và quy đổi từ danh mục đơn vị.',
       '**Demo KT2**',
       '1. Gửi UUID mới và body hợp lệ → **201**, `is_duplicate: false`, tồn thay đổi đúng một lần.',
-      '2. Gửi lại cùng UUID với nguyên body → **200**, `is_duplicate: true`, trả giao dịch gốc và giữ nguyên tồn.',
-      '3. Giữ UUID, chỉ đổi số gói thành một giá trị hợp lệ khác → **409**, lịch sử và tồn giữ nguyên.',
+      '2. Sao chép nguyên `data.transaction_id` từ phản hồi 201 vào `transaction_id` và giữ nguyên các trường còn lại → **200**, `is_duplicate: true`, trả giao dịch gốc và giữ nguyên tồn.',
+      '3. Giữ đúng UUID vừa sao chép. Đổi số gói, đổi loại nhập/xuất hoặc dùng mã quét của sản phẩm khác → **409** với request hợp lệ và đủ quyền. Lịch sử và tồn giữ nguyên.',
+      '`transaction_id` là duy nhất trên toàn bộ lịch sử nhập/xuất. Đổi giá trị một chữ số hex sẽ thành UUID khác. Backend xác định sản phẩm từ `scan_code`.',
       'Sau mỗi lượt, xem **GET /api/inventory** và lọc **GET /api/transactions** theo transactionId để đối chiếu. Replay cần đúng tài khoản đã gửi giao dịch và quyền tại điểm quét gốc.',
     ].join('\n\n'),
   })
@@ -74,7 +75,7 @@ export class StockMovementsController {
   @ApiResponse({ status: 404, description: 'Mã quét không tồn tại' })
   @ApiResponse({
     status: 409,
-    description: 'UUID đã được dùng cho nội dung khác, tồn không đủ, sản phẩm ngừng hoạt động hoặc dữ liệu tồn không hợp lệ',
+    description: 'UUID đã được dùng cho giao dịch có nội dung khác (kể cả sản phẩm khác), tồn không đủ, sản phẩm ngừng hoạt động hoặc dữ liệu tồn không hợp lệ',
     schema: {
       type: 'object',
       required: ['message', 'error', 'statusCode'],

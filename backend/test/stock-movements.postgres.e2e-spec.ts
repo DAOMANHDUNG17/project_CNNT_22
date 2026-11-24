@@ -113,7 +113,8 @@ describePostgres('POST /api/stock-movements with isolated PostgreSQL', () => {
     app = module.createNestApplication();
     app.setGlobalPrefix('api');
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
-    await app.init();
+    // Keep one loopback HTTP listener open for concurrent requests in this suite.
+    await app.listen(0, '127.0.0.1');
   });
 
   beforeEach(async () => {
@@ -179,6 +180,7 @@ describePostgres('POST /api/stock-movements with isolated PostgreSQL', () => {
       { ...basePayload, scan_code: undefined }, { ...basePayload, scan_code: '' }, { ...basePayload, scan_code: '   ' },
       { ...basePayload, scan_point_id: null },
       { ...basePayload, movement_type: 'MOVE' }, { ...basePayload, quantity_base: '24' },
+      { ...basePayload, product_id: 'P1' },
       { ...basePayload, user_id: '1' }, { ...basePayload, conversion_factor: 24 },
       { ...basePayload, inventory_after: '124' }, { ...basePayload, unknown: true },
       { ...basePayload, scan_code: 123 }, { ...basePayload, scan_code: 'X'.repeat(81) },
@@ -240,6 +242,117 @@ describePostgres('POST /api/stock-movements with isolated PostgreSQL', () => {
     await replayOnly({ ...body, quantity_packages: 3 }).expect(409);
     await replayOnly({ ...body, transaction_id: uuid('122') }).expect(404);
     expect(await readState()).toEqual(saved);
+  });
+
+  describe('KT2 UUID identity across SP017 and SP020', () => {
+    const sp017 = { ...basePayload, scan_code: 'SW-SP017-01', quantity_packages: 1 };
+    const sp020 = { ...basePayload, scan_code: 'SW-SP020-01', quantity_packages: 3 };
+
+    beforeEach(async () => {
+      await sql.unsafe(`
+        INSERT INTO products(product_id, product_name, base_unit, is_active) VALUES
+          ('SP017', 'QA SP017', 'piece', true), ('SP020', 'QA SP020', 'piece', true);
+        INSERT INTO inventory(product_id, quantity_base) VALUES ('SP017', 18), ('SP020', 9);
+        INSERT INTO product_units(product_unit_id, product_id, unit_name, conversion_factor, scan_code, is_base_unit) VALUES
+          (17, 'SP017', 'piece', 1, 'SW-SP017-01', true), (20, 'SP020', 'piece', 1, 'SW-SP020-01', true);
+      `);
+    });
+
+    const readState = async () => (await sql.unsafe(`
+      SELECT (SELECT jsonb_agg(to_jsonb(i) ORDER BY i.product_id) FROM inventory i
+                WHERE i.product_id IN ('SP017', 'SP020')) AS inventory,
+             (SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY t.transaction_id), '[]')
+                FROM stock_transactions t) AS movements
+    `))[0] as {
+      inventory: { product_id: string; quantity_base: number; updated_at: string }[];
+      movements: { transaction_id: string; product_id: string }[];
+    };
+
+    it('returns 201, then 200 for an exact replay and 409 for a change of quantity, product or type', async () => {
+      const body = { ...sp020, transaction_id: uuid('125') };
+      const initial = await readState();
+      expect(initial.inventory.map(row => row.quantity_base)).toEqual([18, 9]);
+      const created = await post(body, 'staff-token').expect(201);
+      expect(created.body).toMatchObject({
+        is_duplicate: false,
+        data: { transaction_id: body.transaction_id, product_id: 'SP020', inventory_before: '9', inventory_after: '12' },
+      });
+      const saved = await readState();
+      expect(saved.inventory[0]).toEqual(initial.inventory[0]);
+      expect(saved.inventory[1].quantity_base).toBe(12);
+      expect(saved.movements).toEqual([
+        expect.objectContaining({ transaction_id: body.transaction_id, product_id: 'SP020' }),
+      ]);
+
+      const replay = await post(body, 'staff-token').expect(200);
+      expect(replay.body).toMatchObject({ is_duplicate: true, data: created.body.data });
+      expect(await readState()).toEqual(saved);
+
+      await post({ ...body, quantity_packages: 4 }, 'staff-token').expect(409);
+      expect(await readState()).toEqual(saved);
+      await post({ ...sp017, transaction_id: body.transaction_id }, 'staff-token').expect(409);
+      expect(await readState()).toEqual(saved);
+      await post({ ...body, movement_type: 'OUT' }, 'staff-token').expect(409);
+      expect(await readState()).toEqual(saved);
+    });
+
+    it('rejects reuse of an SP017 UUID for SP020 at both the API and PostgreSQL boundaries', async () => {
+      const id = uuid('126');
+      await post({ ...sp017, transaction_id: id }, 'staff-token').expect(201);
+      const saved = await readState();
+      await post({ ...sp020, transaction_id: id }, 'staff-token').expect(409);
+      expect(await readState()).toEqual(saved);
+
+      await expect(sql.unsafe(`
+        INSERT INTO stock_transactions(transaction_id, product_id, product_unit_id, scan_point_id, user_id,
+          movement_type, quantity_packages, conversion_factor_snapshot, inventory_before, inventory_after, scan_code_snapshot)
+        VALUES ($1, 'SP020', 20, 'SCAN-01', 2, 'IN', 3, 1, 9, 12, 'SW-SP020-01')
+      `, [id])).rejects.toMatchObject({ code: '23505', constraint_name: 'stock_transactions_pkey' });
+      expect(await readState()).toEqual(saved);
+      expect(saved.movements).toEqual([expect.objectContaining({ transaction_id: id, product_id: 'SP017' })]);
+    });
+
+    it('returns 409 for a different granted point and 403 for an unassigned point', async () => {
+      const adminBody = { ...sp020, transaction_id: uuid('127') };
+      const staffBody = { ...sp017, transaction_id: uuid('128') };
+      await post(adminBody).expect(201);
+      await post(staffBody, 'staff-token').expect(201);
+      const saved = await readState();
+
+      await post({ ...adminBody, scan_point_id: 'SCAN-02' }).expect(409);
+      expect(await readState()).toEqual(saved);
+      await post({ ...staffBody, scan_point_id: 'SCAN-02' }, 'staff-token').expect(403);
+      expect(await readState()).toEqual(saved);
+    });
+
+    it('creates exactly one movement when both products use one UUID concurrently', async () => {
+      const id = uuid('129');
+      const initial = await readState();
+      const results = await Promise.all([
+        post({ ...sp017, transaction_id: id }, 'staff-token'),
+        post({ ...sp020, transaction_id: id }, 'staff-token'),
+      ]);
+      expect(results.map(result => result.status).sort()).toEqual([201, 409]);
+      const winner = results[0].status === 201 ? 'SP017' : 'SP020';
+      const saved = await readState();
+      expect(saved.movements).toEqual([expect.objectContaining({ transaction_id: id, product_id: winner })]);
+      expect(saved.inventory.map(row => row.quantity_base)).toEqual(winner === 'SP017' ? [19, 9] : [18, 12]);
+      const loserIndex = winner === 'SP017' ? 1 : 0;
+      expect(saved.inventory[loserIndex]).toEqual(initial.inventory[loserIndex]);
+    });
+
+    it('creates independent movements for visually similar but different UUIDs', async () => {
+      const sp020Id = 'b871ac7b-dcf3-4a64-8b06-a9dc0ef1c582';
+      const sp017Id = 'b871a7cb-dcf3-4a64-8b06-a9dc0ef1c582';
+      await post({ ...sp020, transaction_id: sp020Id }, 'staff-token').expect(201);
+      await post({ ...sp017, transaction_id: sp017Id }, 'staff-token').expect(201);
+      const saved = await readState();
+      expect(saved.inventory.map(row => row.quantity_base)).toEqual([19, 12]);
+      expect(saved.movements).toEqual([
+        expect.objectContaining({ transaction_id: sp017Id, product_id: 'SP017' }),
+        expect.objectContaining({ transaction_id: sp020Id, product_id: 'SP020' }),
+      ]);
+    });
   });
 
   it('KT2 concurrent uppercase/lowercase UUID requests create one movement', async () => {

@@ -55,6 +55,32 @@ test('grants both points, then revokes all with an empty array', async ({ page }
   await dialog.getByRole('button', { name: 'Lưu người dùng' }).click(); await expect(dialog).toBeHidden(); expect(state.puts[1]).toEqual([]);
   await edit(page); await expect(checkbox(page, 'SCAN-01')).not.toBeChecked(); await expect(checkbox(page, 'SCAN-02')).not.toBeChecked();
 });
+test('VIEWER hides scan point controls and saves the role without applying draft grants', async ({ page }) => {
+  const state = await setup(page);
+  const dialog = await edit(page);
+  const role = dialog.getByLabel('Vai trò', { exact: true });
+  const notice = dialog.getByText('Người xem không có quyền nhập kho, xuất kho hoặc sử dụng điểm quét.', { exact: true });
+  const scanPoints = dialog.getByRole('region', { name: 'Quyền sử dụng điểm quét' });
+  await checkbox(page, 'SCAN-02').check();
+
+  await role.click();
+  await page.getByTitle('Người xem', { exact: true }).click();
+  await expect(notice).toBeVisible();
+  await expect(scanPoints).toHaveCount(0);
+
+  await role.click();
+  await page.getByTitle('Quản trị viên', { exact: true }).click();
+  await expect(notice).toHaveCount(0);
+  await expect(scanPoints).toBeVisible();
+  await expect(checkbox(page, 'SCAN-02')).toBeChecked();
+
+  await role.click();
+  await page.getByTitle('Người xem', { exact: true }).click();
+  await dialog.getByRole('button', { name: 'Lưu người dùng' }).click();
+  await expect(dialog).toBeHidden();
+  expect(state.patchCount).toBe(1);
+  expect(state.puts).toEqual([]);
+});
 test('failed load blocks save and retry restores saved grants', async ({ page }) => {
   const state = await setup(page); state.getError = true;
   await page.getByRole('button', { name: 'Sửa người dùng' }).click(); const dialog = page.getByRole('dialog');

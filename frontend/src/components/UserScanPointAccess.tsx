@@ -22,6 +22,8 @@ export function UserScanPointAccess({ userId, role, disabled, onChange }: { user
   const ready = !resource.loading && !resource.error && !!resource.data && selection?.data === resource.data;
   const invalid = (role === 'STAFF' && ids.length > 1) || ids.some(id => !resource.data?.points.some(point => point.scan_point_id === id && point.is_active));
   useEffect(() => { onChange({ ready, ids, savedIds, invalid }); }, [ready, ids, savedIds, invalid, onChange]);
+  if (role === 'VIEWER') return null;
+
   return <section aria-label="Quyền sử dụng điểm quét" style={{ marginBottom: 24 }}>
     <Typography.Text strong>Quyền sử dụng điểm quét</Typography.Text>
     <p className="muted">{role === 'STAFF' ? 'STAFF chỉ được phân công một điểm quét. Chọn Chưa phân công để thu hồi toàn bộ quyền.' : 'Chọn các điểm quét tài khoản được cấp quyền. Bỏ chọn tất cả để thu hồi toàn bộ quyền.'}</p>
