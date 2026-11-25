@@ -2,9 +2,10 @@ import { expect, it } from 'vitest';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
 import type { Server } from 'node:net';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { devUrl, startDev } from '../../config/multi-host';
 
 function listen(server: Server, host: string, port = 0) {
@@ -45,8 +46,20 @@ it('shares HTTP, relative API auth and HMR on three addresses, then releases all
   const backendPort = await listen(backend, '127.0.0.1');
   let dev: Awaited<ReturnType<typeof startDev>> | undefined;
   const sockets: WebSocket[] = [];
+  const probeName = `.env.test-multi-${process.pid}-${Date.now()}`;
+  const probeFile = fileURLToPath(new URL(`../../${probeName}`, import.meta.url));
+  let probeCreated = false;
   try {
-    dev = await startDev({ port: 0, hosts: ['127.0.0.2', '127.0.0.3'],
+    // A real, credential-free file makes this check meaningful on clean clones.
+    // Never create, overwrite or read the developer's actual .env.
+    writeFileSync(probeFile, 'SYNTHETIC_DENY_PROBE=not-a-secret\n', { flag: 'wx' });
+    probeCreated = true;
+    // Pass a concrete free port: Vite can fall back to configured 5173 for 0,
+    // which would collide with the developer's frontend outside this test.
+    const probe = createServer();
+    const frontendPort = await listen(probe, '127.0.0.1');
+    await close(probe);
+    dev = await startDev({ port: frontendPort, hosts: ['127.0.0.2', '127.0.0.3'],
       apiTarget: `http://127.0.0.1:${backendPort}`, cacheDir: mkdtempSync(join(tmpdir(), 'warehouse-multi-host-')), logLevel: 'silent' });
     expect(dev.hosts).toEqual(['127.0.0.1', '127.0.0.2', '127.0.0.3']);
     for (const host of dev.hosts) {
@@ -54,7 +67,7 @@ it('shares HTTP, relative API auth and HMR on three addresses, then releases all
       expect((await fetch(base)).status).toBe(200);
       const response = await fetch(`${base}api/transactions?movementType=OUT`, { headers: { Authorization: 'Bearer fixture-multi-host' } });
       expect(await response.json()).toEqual({ ok: true });
-      expect((await fetch(`${base}.env`)).status).toBe(403);
+      expect((await fetch(`${base}${probeName}`)).status).toBe(403);
       const socket = new WebSocket(`${base.replace('http:', 'ws:')}?token=${dev.vite.config.webSocketToken}`, 'vite-hmr');
       sockets.push(socket);
       await hotMessage(socket, 'connected');
@@ -74,6 +87,7 @@ it('shares HTTP, relative API auth and HMR on three addresses, then releases all
   } finally {
     sockets.forEach(socket => socket.close());
     await dev?.close();
+    if (probeCreated) unlinkSync(probeFile);
     backend.closeAllConnections();
     await close(backend);
   }

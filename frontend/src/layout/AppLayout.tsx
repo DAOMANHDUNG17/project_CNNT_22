@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Avatar, Breadcrumb, Button, Drawer, Dropdown, Layout, Menu, Space, Tooltip } from 'antd';
 import { AppstoreOutlined, ArrowRightOutlined, HomeOutlined, DatabaseOutlined, DownOutlined,
   EnvironmentOutlined, HistoryOutlined, LogoutOutlined, MenuUnfoldOutlined, ReloadOutlined,
-  ScanOutlined, TeamOutlined } from '@ant-design/icons';
+  ScanOutlined, SettingOutlined, TeamOutlined } from '@ant-design/icons';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { useMutation } from '../hooks/useResource';
@@ -51,7 +51,7 @@ function AppLayoutContent() {
     <Layout className="workspace-layout"><header className="topbar">
       <div className="topbar-left"><Button className="mobile-menu-button" type="text" icon={<MenuUnfoldOutlined />} aria-label="Mở menu" onClick={() => setDrawer(true)} />
         <Breadcrumb items={selected?.key === '/' ? [{ title: 'Trang chủ' }] : [
-          { title: <Link to="/"><HomeOutlined /> Trang chủ</Link> }, { title: selected?.label ?? 'Hệ thống' },
+          { title: <Link to="/"><HomeOutlined /> Trang chủ</Link> }, { title: location.pathname === '/settings' ? 'Cài đặt tài khoản' : selected?.label ?? 'Hệ thống' },
         ]} />
       </div>
       <Space className="topbar-right" size={20}>
@@ -66,10 +66,11 @@ function AppLayoutContent() {
         <span className="account-menu-anchor"><Dropdown trigger={['click']} placement="bottomRight" transitionName=""
           getPopupContainer={trigger => trigger.parentElement!}
           styles={{ root: { position: 'absolute', top: 'calc(100% + 4px)', right: 0, bottom: 'auto', left: 'auto' } }} menu={{ items: [
-          { key: 'identity', label: <span className="account-menu-identity"><strong>{user?.display_name}</strong><small>{user && roleLabels[user.role]}</small></span>, disabled: true },
+          { key: 'identity', label: <span className="account-menu-identity"><strong>Thông tin tài khoản</strong><small>{user?.display_name} · {user && roleLabels[user.role]}</small></span>, disabled: true },
+          { key: 'settings', label: 'Cài đặt', icon: <SettingOutlined aria-hidden="true" />, disabled: mutation.busy },
           { type: 'divider' },
           { key: 'logout', label: 'Đăng xuất', icon: <LogoutOutlined />, disabled: mutation.busy },
-        ], onClick: ({ key }) => { if (key === 'logout') void mutation.run(logout, 'Đã đăng xuất.', () => navigate('/login')); } }}>
+        ], onClick: ({ key }) => { if (key === 'settings') navigate('/settings'); if (key === 'logout') void mutation.run(logout, 'Đã đăng xuất.', () => navigate('/login')); } }}>
           <Button type="text" className="profile-button" aria-label="Menu tài khoản"><Avatar className="user-avatar">{user?.display_name.slice(0,1).toUpperCase()}</Avatar><span className="profile-copy"><strong>{user?.display_name}</strong><small>{user && roleLabels[user.role]}</small></span><DownOutlined /></Button>
         </Dropdown></span>
       </Space>

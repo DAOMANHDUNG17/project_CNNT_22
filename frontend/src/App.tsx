@@ -15,6 +15,7 @@ const TransactionsPage = lazy(() => import('./pages/TransactionsPage'));
 const MovementPage = lazy(() => import('./pages/MovementPage'));
 const ScanPointsPage = lazy(() => import('./pages/ScanPointsPage'));
 const UsersPage = lazy(() => import('./pages/UsersPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 
 function ProtectedRoute({ roles }: { roles?: Role[] }) {
   const { user, ready, error, refresh } = useAuth();
@@ -33,6 +34,7 @@ export default function Application() {
       <Route path="products" element={<ProductsPage />} />
       <Route path="inventory" element={<InventoryPage />} />
       <Route path="transactions" element={<TransactionsPage />} />
+      <Route path="settings" element={<SettingsPage />} />
       <Route element={<ProtectedRoute roles={['ADMIN']} />}><Route path="scan-points" element={<ScanPointsPage />} /></Route>
       <Route element={<ProtectedRoute roles={['ADMIN','STAFF']} />}><Route path="stock-movement" element={<MovementPage />} /></Route>
       <Route element={<ProtectedRoute roles={['ADMIN']} />}><Route path="users" element={<UsersPage />} /></Route>
