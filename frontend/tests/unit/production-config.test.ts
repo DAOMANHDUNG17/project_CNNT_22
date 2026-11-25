@@ -1,7 +1,38 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import vercel from '../../../vercel.json';
+import { readFileSync } from 'node:fs';
 import { productionConfig } from '../../config/production';
 import viteConfig from '../../vite.config';
+
+interface VercelRewrite {
+  source: string;
+  destination: string;
+}
+
+interface VercelRoutingConfig {
+  rewrites: VercelRewrite[];
+}
+
+// Read routing config at test runtime so compile-time types do not depend on
+// the JSON import's inferred shape in different build environments.
+function routingConfig(value: unknown): VercelRoutingConfig {
+  if (typeof value !== 'object' || value === null || !('rewrites' in value)
+    || !Array.isArray(value.rewrites)) {
+    throw new Error('vercel.json must contain a rewrites array');
+  }
+  return { rewrites: value.rewrites.map((entry: unknown): VercelRewrite => {
+    if (typeof entry !== 'object' || entry === null || !('source' in entry)
+      || typeof entry.source !== 'string' || !('destination' in entry)
+      || typeof entry.destination !== 'string') {
+      throw new Error('Each Vercel rewrite must have string source and destination');
+    }
+    return { source: entry.source, destination: entry.destination };
+  }) };
+}
+
+const vercelContents: unknown = JSON.parse(
+  readFileSync(new URL('../../../vercel.json', import.meta.url), 'utf8'),
+);
+const vercel = routingConfig(vercelContents);
 
 const apiOrigin = 'https://api.example.test';
 const supabaseUrl = 'https://project.example.test';
@@ -118,11 +149,23 @@ describe('production environment', () => {
 });
 
 describe('Vercel SPA routes', () => {
-  function destination(path: string) {
-    return vercel.rewrites.find(({ source }) =>
+  function destination(path: string): string | undefined {
+    return vercel.rewrites.find(({ source }: VercelRewrite) =>
       new RegExp('^' + source + '$').test(path),
     )?.destination;
   }
+
+  it.each([null, {}, { rewrites: null }, { rewrites: {} }])(
+    'rejects a missing or invalid rewrites array (case %#)',
+    value => expect(() => routingConfig(value)).toThrow('rewrites array'),
+  );
+
+  it.each([
+    null, {}, { source: 123, destination: '/index.html' }, { source: '/settings' },
+    { source: '/settings', destination: false },
+  ])('rejects malformed rewrite entries (case %#)', entry => {
+    expect(() => routingConfig({ rewrites: [entry] })).toThrow('string source and destination');
+  });
 
   it('rewrites application deep links and routes the Swagger entry independently', () => {
     for (const path of [

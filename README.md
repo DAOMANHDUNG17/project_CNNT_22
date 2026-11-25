@@ -4,7 +4,7 @@
 
 ## 1. Chuẩn bị
 
-- Cài Git và Node.js **24.7 trở lên** (kèm npm). Kiểm tra bằng `git --version`, `node --version`, `npm --version`.
+- Cài Git và Node.js **24.x, từ 24.7 trở lên trong nhánh 24** (kèm npm). Vercel chọn Node.js **24.x**; package engines giữ cùng major để không tự chuyển sang major mới. Kiểm tra bằng `git --version`, `node --version`, `npm --version`.
 - Liên hệ **admin của nhóm** để nhận hai file cấu hình `backend/.env`, `frontend/.env`. Gửi cho admin **địa chỉ email bạn muốn dùng để đăng nhập**; admin sẽ tạo tài khoản Supabase Auth, liên kết với `public.users` và cung cấp thông tin đăng nhập qua kênh riêng. Repository không chứa mật khẩu hay key thật.
 - PostgreSQL của project phải có sẵn schema và dữ liệu cần dùng. `npm install` chỉ cài package, không tạo database.
 
