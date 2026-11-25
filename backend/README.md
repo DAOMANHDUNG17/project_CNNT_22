@@ -6,7 +6,7 @@ Nhận file `.env` đã cấu hình từ admin và đặt vào chính thư mục
 
 ```powershell
 npm install
-npm run start:dev
+npm run dev
 ```
 
 API: http://localhost:3000/api · Health: http://localhost:3000/api/health · Swagger: http://localhost:3000/api/docs.

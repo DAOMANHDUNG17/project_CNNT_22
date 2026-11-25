@@ -11,6 +11,7 @@ interface AuthState {
   error: unknown;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  finishPasswordChange: () => Promise<boolean>;
   refresh: () => Promise<void>;
 }
 
@@ -68,7 +69,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }
 
-  return <Context.Provider value={{ user, ready, error, login, logout, refresh }}>{children}</Context.Provider>;
+  async function finishPasswordChange() {
+    try {
+      // Supported SDK local scope clears this device before its network request.
+      // Backend requests global refresh-session revocation separately.
+      const { error: signOutError } = await supabase.auth.signOut({ scope: 'local' });
+      return !signOutError;
+    } catch { return false; }
+    finally { setUser(null); setError(undefined); }
+  }
+
+  return <Context.Provider value={{ user, ready, error, login, logout, refresh, finishPasswordChange }}>{children}</Context.Provider>;
 }
 
 export function useAuth() {

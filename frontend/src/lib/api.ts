@@ -1,4 +1,3 @@
-import { mockApi } from './mock-api';
 export { createDatabaseProduct, listDatabaseProducts, updateDatabaseProduct } from './products-api';
 export type { CreateProductRequest, PatchProductRequest } from './products-api';
 export { listDatabaseInventory } from './inventory-api';
@@ -7,9 +6,6 @@ export { listDatabaseTransactions } from './transactions-api';
 export { createDatabaseProductUnit, listDatabaseProductUnits, updateDatabaseProductUnit } from './product-units-api';
 export type { CreateProductUnitRequest, PatchProductUnitRequest } from './product-units-api';
 export * from './api-types';
-
-// Stable API abstraction backed by development-only Mock Mode for now.
-export const api = mockApi;
 
 export async function allPages<T>(load: (page: number) => Promise<{ data: T[]; pagination: { totalPages: number } }>, signal: AbortSignal): Promise<T[]> {
   const rows: T[] = [];

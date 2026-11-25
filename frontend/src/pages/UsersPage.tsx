@@ -11,10 +11,14 @@ import { initialScanPointAccess, UserScanPointAccess } from '../components/UserS
 import { replaceUserScanPointAccess, sameScanPointIds } from '../lib/scan-point-access-api';
 import { ApiError } from '../lib/api-types';
 import { useAssignedScanPoints } from '../hooks/useAssignedScanPoints';
+import { useNavigate } from 'react-router-dom';
+import { AdminPasswordModal } from '../components/AdminPasswordModal';
 
 const roleOptions = (['ADMIN', 'STAFF', 'VIEWER'] as const).map(value => ({ value, label: roleLabels[value] }));
 
 export default function UsersPage() {
+  const navigate = useNavigate();
+  const [passwordTarget, setPasswordTarget] = useState<ManagedUser>();
   const { user: principal, refresh } = useAuth();
   const assignment = useAssignedScanPoints();
   const { message } = App.useApp();
@@ -94,6 +98,9 @@ export default function UsersPage() {
         { title: 'Trạng thái', dataIndex: 'is_active', render: (value: boolean) => <ActiveTag active={value} /> },
         { title: 'Ngày tạo (UTC+7)', dataIndex: 'created_at', render: timestamp },
         { title: 'Thao tác', key: 'actions', render: (_, row) => <Space wrap><Button size="small" disabled={mutation.busy} onClick={() => edit(row)}>Sửa người dùng</Button>
+          {principal?.role === 'ADMIN' && <Button size="small" disabled={mutation.busy} onClick={() => {
+            if (row.user_id === String(principal.user_id)) navigate('/settings'); else setPasswordTarget(row);
+          }}>Đặt lại mật khẩu</Button>}
           <Popconfirm title={row.is_active ? 'Khóa tài khoản?' : 'Mở khóa tài khoản?'} description="Quyền truy cập sẽ áp dụng từ yêu cầu tiếp theo." onConfirm={() => mutation.run(() => updateDatabaseUser(row.user_id, { is_active: !row.is_active }), 'Đã cập nhật trạng thái.', () => afterSelf(row.user_id))}>
             <Button size="small" danger={row.is_active} disabled={mutation.busy}>{row.is_active ? 'Khóa' : 'Mở khóa'}</Button>
           </Popconfirm></Space> },
@@ -112,5 +119,6 @@ export default function UsersPage() {
         <div className="modal-actions"><Button disabled={mutation.busy} onClick={close}>Hủy</Button><Button aria-label="Lưu người dùng" type="primary" htmlType="submit" loading={mutation.busy} disabled={!!editing && !isViewer && (!scanAccess.ready || scanAccess.invalid)}>Lưu người dùng</Button></div>
       </Form>
     </Modal>
+    {passwordTarget && principal?.role === 'ADMIN' && <AdminPasswordModal key={passwordTarget.user_id} target={passwordTarget} onClose={() => setPasswordTarget(undefined)} />}
   </div>;
 }

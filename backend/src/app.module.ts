@@ -11,6 +11,7 @@ import { StockMovementsModule } from './stock-movements/stock-movements.module';
 import { TransactionsModule } from './transactions/transactions.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { UsersModule } from './users/users.module';
+import { AccountModule } from './account/account.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { UsersModule } from './users/users.module';
     TransactionsModule,
     DashboardModule,
     UsersModule,
+    AccountModule,
   ],
 })
 export class AppModule {}

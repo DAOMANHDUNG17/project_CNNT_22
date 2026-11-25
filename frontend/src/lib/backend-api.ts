@@ -2,11 +2,17 @@ import { ApiError } from './api-types';
 import type { RequestOptions } from './api-types';
 import { supabase } from './supabase';
 
+function apiBaseUrl() {
+  const apiUrl = (import.meta.env.VITE_API_URL ?? (import.meta.env.PROD ? '' : 'http://localhost:3000/api')).replace(/\/$/, '');
+  if (import.meta.env.PROD && !apiUrl) throw new Error('VITE_API_URL is required in production');
+  return apiUrl;
+}
+
 export async function authorizedPut<T>(path: string, body: object): Promise<T> {
   const { data, error } = await supabase.auth.getSession();
   if (error) throw new ApiError(503, 'AUTH_UNAVAILABLE', 'Không thể đọc phiên đăng nhập.');
   if (!data.session) throw new ApiError(401, 'AUTHENTICATION_REQUIRED', 'Vui lòng đăng nhập.');
-  const apiUrl = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api').replace(/\/$/, '');
+  const apiUrl = apiBaseUrl();
   const response = await fetch(`${apiUrl}${path}`, {
     method: 'PUT', headers: { Authorization: `Bearer ${data.session.access_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   });
@@ -26,7 +32,7 @@ export async function authorizedGet<T>(path: string, options: RequestOptions = {
   if (error) throw new ApiError(503, 'AUTH_UNAVAILABLE', 'Không thể đọc phiên đăng nhập.');
   if (!data.session) throw new ApiError(401, 'AUTHENTICATION_REQUIRED', 'Vui lòng đăng nhập.');
 
-  const apiUrl = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api').replace(/\/$/, '');
+  const apiUrl = apiBaseUrl();
   const response = await fetch(`${apiUrl}${path}`, {
     headers: { Authorization: `Bearer ${data.session.access_token}` },
     signal: options.signal,
@@ -53,7 +59,7 @@ export async function authorizedPostWithStatus<T>(path: string, body: object): P
   if (error) throw new ApiError(503, 'AUTH_UNAVAILABLE', 'Không thể đọc phiên đăng nhập.');
   if (!data.session) throw new ApiError(401, 'AUTHENTICATION_REQUIRED', 'Vui lòng đăng nhập.');
 
-  const apiUrl = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api').replace(/\/$/, '');
+  const apiUrl = apiBaseUrl();
   const response = await fetch(`${apiUrl}${path}`, {
     method: 'POST',
     headers: {
@@ -94,7 +100,7 @@ export async function authorizedPatch<T>(path: string, body: object): Promise<T>
   if (error) throw new ApiError(503, 'AUTH_UNAVAILABLE', 'Không thể đọc phiên đăng nhập.');
   if (!data.session) throw new ApiError(401, 'AUTHENTICATION_REQUIRED', 'Vui lòng đăng nhập.');
 
-  const apiUrl = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api').replace(/\/$/, '');
+  const apiUrl = apiBaseUrl();
   const response = await fetch(`${apiUrl}${path}`, {
     method: 'PATCH',
     headers: {
@@ -105,6 +111,11 @@ export async function authorizedPatch<T>(path: string, body: object): Promise<T>
   });
   if (!response.ok) {
     const payload = await response.json().catch(() => null) as { message?: unknown } | null;
+    if (path === '/account/password' || /^\/users\/[1-9][0-9]*\/password$/.test(path)) {
+      const detail = typeof payload?.message === 'string' ? payload.message
+        : Array.isArray(payload?.message) && payload.message.every(item => typeof item === 'string') ? payload.message.join(' ') : undefined;
+      if (detail && [400, 404, 429, 503].includes(response.status)) throw new ApiError(response.status, 'USER_MANAGEMENT_ERROR', detail);
+    }
     if (path.startsWith('/users/') && typeof payload?.message === 'string' && [404, 409, 503].includes(response.status)) {
       throw new ApiError(response.status, 'USER_MANAGEMENT_ERROR', payload.message);
     }

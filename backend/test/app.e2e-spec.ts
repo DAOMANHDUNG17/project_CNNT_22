@@ -62,7 +62,7 @@ describe('API (e2e)', () => {
       .expect({ status: 'ok', database: 'connected' });
   });
 
-  it('documents 20 operations in seven groups and hides only the two diagnostic probes', () => {
+  it('documents 23 operations including account passwords in seven groups and hides only the two diagnostic probes', () => {
     const document = createApiDocument(app);
     expect(document.tags?.map(tag => tag.name)).toEqual(Object.values(apiTags));
     expect(document.paths['/api/health/database']).toBeUndefined();
@@ -79,13 +79,13 @@ describe('API (e2e)', () => {
       }
     }
     expect(totals).toEqual({
-      [apiTags.account]: 1,
+      [apiTags.account]: 3,
       [apiTags.catalog]: 6,
       [apiTags.inventory]: 2,
       [apiTags.movements]: 2,
       [apiTags.history]: 1,
       [apiTags.scanPoints]: 4,
-      [apiTags.administration]: 4,
+      [apiTags.administration]: 5,
     });
     const movements = document.paths['/api/stock-movements'].post;
     expect(movements?.responses).toEqual(expect.objectContaining({
